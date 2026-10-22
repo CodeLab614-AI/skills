@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from . import ranges, rules
+from . import mechanical, ranges, rules
 from .diffparse import diff_files, untracked_files
 from .model import FileChange, Hunk
 from .ranges import RangeSpec
@@ -30,7 +30,8 @@ Step = Callable[[FactsContext], None]
 
 
 def classify(ctx: FactsContext) -> None:
-    """Task 7: mechanical vs logic. No-op until then."""
+    """Mechanical vs logic (lockfile, generated, whitespace, pure move)."""
+    mechanical.classify(ctx.repo, ctx.files, ctx.hunks)
 
 
 def repeated_replacements(ctx: FactsContext) -> None:
