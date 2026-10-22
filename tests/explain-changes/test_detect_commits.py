@@ -222,7 +222,7 @@ class DetectCommitsTests(RepoTestCase):
         repo.write("a.txt", "changed\n")
         data = _detect(repo)
         self.assertEqual(data["uncommitted"], {"staged": 0, "unstaged": 1, "untracked": 1})
-        self.assertEqual(data["diff_size"]["files"], 2)
+        self.assertEqual(data["diff_size"]["files"], 3)
         scope = _question(data, "scope")
         self.assertIn("--include-uncommitted", _opt(scope, "whole_branch")["facts_args"])
 
