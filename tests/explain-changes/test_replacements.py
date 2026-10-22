@@ -120,6 +120,25 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(find_repeated_replacements(hs), [])
         self.assertEqual(hs[0].mechanical_kind, "whitespace")
 
+    def test_numbers_and_literals_never_qualify(self):
+        for old, new in (("30", "60"), ("true", "false"), ("null", "x"),
+                         ("None", "y"), ("a1", "30")):
+            hs = self._three("t = %s;" % old, "t = %s;" % new)
+            self.assertEqual(find_repeated_replacements(hs), [], (old, new))
+            self.assertTrue(all(h.klass == "logic" for h in hs))
+
+    def test_identifier_rename_still_qualifies(self):
+        hs = self._three("old_name(1);", "$newName(1);")
+        self.assertEqual(len(find_repeated_replacements(hs)), 1)
+
+    def test_exceptions_exclude_hunks_marked_by_other_pairs(self):
+        hs = ([_hunk("a%d" % i, ["foo(x)"], ["baz(x)"]) for i in range(3)]
+              + [_hunk("b%d" % i, ["x();"], ["baz();"]) for i in range(3)])
+        reps = find_repeated_replacements(hs)
+        self.assertEqual([(r["old"], r["new"]) for r in reps],
+                         [("foo", "baz"), ("x", "baz")])
+        self.assertEqual([r["exceptions"] for r in reps], [[], []])
+
     def test_deterministic_order(self):
         hs = (self._three("zeta()", "eta()")
               + [_hunk("g%d" % i, ["alpha()"], ["beta()"]) for i in range(3)])
