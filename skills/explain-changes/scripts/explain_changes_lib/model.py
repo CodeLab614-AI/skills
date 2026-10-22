@@ -89,6 +89,7 @@ class FileChange:
     mechanical_kind: Optional[str] = None
     rules: List[str] = field(default_factory=list)
     was_mechanical: Optional[str] = None
+    batch: Optional[int] = None
 
     def to_json(self) -> Dict:
         return {
@@ -103,6 +104,7 @@ class FileChange:
             "hunks": [h.id for h in self.hunks],
             "class": self.klass, "mechanical_kind": self.mechanical_kind,
             "rules": list(self.rules), "was_mechanical": self.was_mechanical,
+            "batch": self.batch,
         }
 
 

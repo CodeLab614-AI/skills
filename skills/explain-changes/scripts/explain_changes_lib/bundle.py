@@ -37,6 +37,14 @@ def bundle(repo: Path, batch: int) -> Dict:
                           "notices": facts.get("notices", [])},
         "logic_hunks": [h for h in facts.get("hunks", [])
                         if h.get("batch") == batch and h.get("class") == "logic"],
+        "logic_files": [{"path": f["path"], "old_path": f.get("old_path"),
+                         "status": f.get("status"), "rules": f.get("rules", []),
+                         "was_mechanical": f.get("was_mechanical"),
+                         "binary": f.get("binary", False),
+                         "too_large": f.get("too_large", False)}
+                        for f in facts.get("files", [])
+                        if f.get("batch") == batch and f.get("class") == "logic"
+                        and not f.get("hunks")],
         "mechanical_summary": [{"file": f["path"], "kind": f["mechanical_kind"]}
                                for f in facts.get("files", [])
                                if f.get("class") == "mechanical"],

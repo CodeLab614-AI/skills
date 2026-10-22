@@ -176,6 +176,9 @@ def apply_targets(files: List[FileChange], hunks: List[Hunk],
                 hit = True
         if hit:
             touched.append(fc)
+    for fc in files:
+        if fc.hunks:
+            fc.rules = sorted(set(fc.rules) | {r for h in fc.hunks for r in h.rules})
     for fc in touched:
         if any(h.klass == "logic" for h in fc.hunks):
             fc.klass, fc.mechanical_kind = "logic", None

@@ -114,3 +114,21 @@ def find_repeated_replacements(hunks: List[Hunk], min_files: int = MIN_FILES) ->
                            for f, ids in sorted(exceptions.items())],
         })
     return result
+
+
+def prune_lifted(reps: List[Dict], hunks: List[Hunk]) -> List[Dict]:
+    """Drop hunks that a rule lifted back to logic; drop patterns left empty."""
+    lifted = {h.id for h in hunks if h.klass == "logic" and h.was_mechanical == KIND}
+    if not lifted:
+        return reps
+    file_of = {h.id: h.file for h in hunks}
+    out: List[Dict] = []
+    for rep in reps:
+        ids = [i for i in rep["hunk_ids"] if i not in lifted]
+        if not ids:
+            continue
+        rep = dict(rep)
+        rep["hunk_ids"] = ids
+        rep["files"] = sorted({file_of[i] for i in ids if i in file_of})
+        out.append(rep)
+    return out

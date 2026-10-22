@@ -48,6 +48,7 @@ def targets_and_batches(ctx: FactsContext) -> None:
     """Lift hunks matched by rule targets to logic, then split logic into batches."""
     if ctx.targets:
         targets.apply_targets(ctx.files, ctx.hunks, ctx.targets)
+        ctx.replacements = replacements.prune_lifted(ctx.replacements, ctx.hunks)
     ctx.batches = batches.make_batches(ctx.files, ctx.hunks)
 
 

@@ -74,6 +74,7 @@ class TargetFlowTests(RepoTestCase):
                          ("logic", ["R1"], "generated"))
         f = facts["files"][0]
         self.assertEqual((f["class"], f["mechanical_kind"]), ("logic", None))
+        self.assertEqual(f["rules"], ["R1"])
         self.assertEqual(facts["targets"][0]["id"], "R1")
         self.assertEqual(facts["totals"]["logic_lines"], 1)
 
@@ -99,6 +100,25 @@ class TargetFlowTests(RepoTestCase):
         sh = by["run.sh"]
         self.assertEqual((sh["class"], sh["rules"], sh["was_mechanical"]),
                          ("logic", ["R2"], None))
+
+    def test_lifted_replacements_are_pruned(self):
+        repo = self.make_repo()
+        for i in range(4):
+            repo.write("f%d.ts" % i, "const a = fetchData(%d);\n" % i)
+        repo.commit("init")
+        repo.checkout("feature", create=True)
+        for i in range(4):
+            repo.write("f%d.ts" % i, "const a = loadData(%d);\n" % i)
+        repo.commit("rename")
+        self.assertEqual(len(self._facts(repo)["replacements"][0]["files"]), 4)
+        facts = self._facts(repo, [self._target(["f0.ts"], ["modify"])])
+        rep = facts["replacements"][0]
+        self.assertEqual(rep["files"], ["f1.ts", "f2.ts", "f3.ts"])
+        by = {h["file"]: h for h in facts["hunks"]}
+        self.assertNotIn(by["f0.ts"]["id"], rep["hunk_ids"])
+        self.assertEqual(len(rep["hunk_ids"]), 3)
+        facts = self._facts(repo, [self._target([], ["modify"])])
+        self.assertEqual(facts["replacements"], [])
 
     def test_non_matching_target_leaves_hunk(self):
         repo = self.make_repo()
@@ -221,6 +241,26 @@ class BundleTests(RepoTestCase):
         self.assertEqual(b2["targets"][0]["id"], "R1")
         self.assertIn("totals", b2["facts_summary"])
         self.assertIn("batches", b2["facts_summary"])
+
+    def test_bundle_lists_lifted_hunkless_files(self):
+        repo = self.make_repo()
+        repo.write("old/name.txt", "".join("line %d\n" % i for i in range(20)))
+        repo.commit("init")
+        repo.checkout("feature", create=True)
+        repo.git("mv", "old/name.txt", "new_name.txt")
+        repo.commit("mv")
+        target = {"id": "R1", "rule": {"file": "CLAUDE.md", "line": 1}, "paths": [],
+                  "change_kinds": ["rename"], "line_pattern": None}
+        code, data = run_script(repo, "facts", "--from", "main", "--targets-stdin",
+                                stdin=json.dumps([target]))
+        self.assertEqual(code, 0, data)
+        self.assertEqual(data["batches"], [{"id": 1, "paths": ["new_name.txt"], "logic_lines": 1}])
+        code, b = run_script(repo, "bundle", "--batch", "1")
+        self.assertEqual(code, 0, b)
+        self.assertEqual(b["logic_files"], [{
+            "path": "new_name.txt", "old_path": "old/name.txt", "status": "renamed",
+            "rules": ["R1"], "was_mechanical": "move", "binary": False, "too_large": False}])
+        self.assertEqual(b["mechanical_summary"], [])
 
     def test_bundle_errors(self):
         repo = self.make_repo()

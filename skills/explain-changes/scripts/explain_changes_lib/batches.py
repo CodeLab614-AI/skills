@@ -22,6 +22,8 @@ def make_batches(files: List[FileChange], hunks: List[Hunk],
         lines = sum(len(h.removed) + len(h.added) for h in fc.hunks if h.klass == "logic")
         if lines or any(h.klass == "logic" for h in fc.hunks):
             sizes[fc.path] = lines
+        elif not fc.hunks and fc.klass == "logic":
+            sizes[fc.path] = 1  # hunkless logic file (rename, mode, binary): weight 1
     if not sizes:
         return []
 
@@ -60,6 +62,8 @@ def make_batches(files: List[FileChange], hunks: List[Hunk],
     for n, members in enumerate(bins, start=1):
         paths = sorted(p for unit in members for p in unit)
         for p in paths:
+            if not by_path[p].hunks:
+                by_path[p].batch = n
             for h in by_path[p].hunks:
                 if h.klass == "logic":
                     h.batch = n
