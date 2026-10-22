@@ -4,7 +4,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import re
-from typing import Dict, List, Set
+from typing import List, Set
 
 from . import mechanical
 from .model import BlockedError, FileChange, Hunk, Target
@@ -106,17 +106,50 @@ def hunk_kinds(fc: FileChange, hunk: Hunk) -> Set[str]:
     return kinds
 
 
+def file_kinds(fc: FileChange) -> Set[str]:
+    kinds: Set[str] = set()
+    if fc.status in ("added", "untracked"):
+        kinds.add("add")
+    if fc.status == "deleted":
+        kinds.add("delete")
+    if fc.status == "renamed":
+        kinds.add("rename")
+    if fc.old_mode != fc.new_mode and fc.old_mode and fc.new_mode:
+        kinds.add("mode")
+    return kinds
+
+
+def _path_ok(regexes, fc: FileChange) -> bool:
+    if not regexes:
+        return True
+    paths = [fc.path] + ([fc.old_path] if fc.old_path else [])
+    return any(r.match(p) for r in regexes for p in paths)
+
+
 def _matches(target: Target, regexes, pattern, fc: FileChange, hunk: Hunk) -> bool:
-    if regexes:
-        paths = [fc.path] + ([fc.old_path] if fc.old_path else [])
-        if not any(r.match(p) for r in regexes for p in paths):
-            return False
+    if not _path_ok(regexes, fc):
+        return False
     if target.change_kinds and not (set(target.change_kinds) & hunk_kinds(fc, hunk)):
         return False
     if pattern is not None:
         if not any(pattern.search(line) for line in hunk.added + hunk.removed):
             return False
     return True
+
+
+def _lift_hunkless(fc: FileChange, targets: List[Target], compiled) -> None:
+    """Files without hunks (pure rename, mode, binary) are matched by file kind."""
+    kinds = file_kinds(fc)
+    for target, (regexes, pattern) in zip(targets, compiled):
+        if pattern is not None or not _path_ok(regexes, fc):
+            continue
+        if target.change_kinds and not (set(target.change_kinds) & kinds):
+            continue
+        if target.id not in fc.rules:
+            fc.rules.append(target.id)
+        if fc.klass != "logic":
+            fc.was_mechanical = fc.was_mechanical or fc.mechanical_kind
+        fc.klass, fc.mechanical_kind = "logic", None
 
 
 def apply_targets(files: List[FileChange], hunks: List[Hunk],
@@ -127,6 +160,9 @@ def apply_targets(files: List[FileChange], hunks: List[Hunk],
                 for t in targets]
     touched: List[FileChange] = []
     for fc in files:
+        if not fc.hunks:
+            _lift_hunkless(fc, targets, compiled)
+            continue
         hit = False
         for hunk in fc.hunks:
             for target, (regexes, pattern) in zip(targets, compiled):

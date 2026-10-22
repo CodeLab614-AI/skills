@@ -77,6 +77,29 @@ class TargetFlowTests(RepoTestCase):
         self.assertEqual(facts["targets"][0]["id"], "R1")
         self.assertEqual(facts["totals"]["logic_lines"], 1)
 
+    def test_hunkless_rename_and_mode_lifted(self):
+        repo = self.make_repo()
+        repo.write("old/name.txt", "".join("line %d\n" % i for i in range(20)))
+        repo.write("run.sh", "echo hi\n")
+        repo.commit("init")
+        repo.checkout("feature", create=True)
+        repo.git("mv", "old/name.txt", "new_name.txt")
+        (repo.path / "run.sh").chmod(0o755)
+        repo.commit("mv and chmod")
+        base = self._facts(repo)
+        by = {f["path"]: f for f in base["files"]}
+        self.assertEqual(by["new_name.txt"]["mechanical_kind"], "move")
+        facts = self._facts(repo, [self._target([], ["rename"]),
+                                   self._target([], ["mode"], tid="R2"),
+                                   self._target([], ["rename"], pattern="x", tid="R3")])
+        by = {f["path"]: f for f in facts["files"]}
+        mv = by["new_name.txt"]
+        self.assertEqual((mv["class"], mv["mechanical_kind"], mv["rules"], mv["was_mechanical"]),
+                         ("logic", None, ["R1"], "move"))
+        sh = by["run.sh"]
+        self.assertEqual((sh["class"], sh["rules"], sh["was_mechanical"]),
+                         ("logic", ["R2"], None))
+
     def test_non_matching_target_leaves_hunk(self):
         repo = self.make_repo()
         repo.write("src/a.ts", "a\n")

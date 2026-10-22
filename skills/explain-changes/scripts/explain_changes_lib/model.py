@@ -87,6 +87,8 @@ class FileChange:
     hunks: List[Hunk] = field(default_factory=list)
     klass: str = "logic"
     mechanical_kind: Optional[str] = None
+    rules: List[str] = field(default_factory=list)
+    was_mechanical: Optional[str] = None
 
     def to_json(self) -> Dict:
         return {
@@ -100,6 +102,7 @@ class FileChange:
             "submodule": dict(self.submodule) if self.submodule else None,
             "hunks": [h.id for h in self.hunks],
             "class": self.klass, "mechanical_kind": self.mechanical_kind,
+            "rules": list(self.rules), "was_mechanical": self.was_mechanical,
         }
 
 
