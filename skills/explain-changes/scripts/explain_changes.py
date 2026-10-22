@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from explain_changes_lib import detect as detect_mod  # noqa: E402
 from explain_changes_lib import gitcmd  # noqa: E402
 from explain_changes_lib.model import BlockedError  # noqa: E402
 
@@ -69,7 +70,9 @@ def find_repo(cwd: Path) -> Path:
 def main(argv=None) -> int:
     try:
         args = build_parser().parse_args(argv)
-        find_repo(Path.cwd())
+        repo = find_repo(Path.cwd())
+        if args.command == "detect":
+            return _emit(detect_mod.detect(repo, fetch=not args.no_fetch))
         return _not_implemented(args.command)
     except BlockedError as exc:
         return _emit({"ok": False, "error": {"code": exc.code, "message": exc.message}}, 2)
