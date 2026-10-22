@@ -23,6 +23,12 @@ In indentation-significant files (`.py`, `.pyi`, `.yml`, `.yaml`, `.mk`, `.coffe
 
 `status` is `renamed`, `similarity` is 100, the mode is unchanged and there are no hunks. A rename with any edit or a mode change is logic.
 
+## Repeated replacements (`mechanical_kind: repeated_replacement`)
+
+Runs after the rules above and looks only at hunks that are still logic. For each hunk with the same number of `-` and `+` lines, the lines are paired and every intraline change is widened to whole tokens (`[\w$]+`), giving `(old_token, new_token)` pairs. A hunk is **pure** for a pair `(o, n)` only if every line pair yields exactly that one pair and `old_line.replace(o, n) == new_line` holds exactly on every line. A change that cannot be widened to whole tokens, two different pairs in one hunk, or unequal `-`/`+` counts make the hunk not pure. A pair qualifies when its pure hunks cover at least 3 distinct files; its pure hunks become mechanical and a file whose hunks are all mechanical becomes mechanical (mixed kinds read as `whitespace`).
+
+The **exceptions** of a pair are the hunks that are not pure but, in any file, contain `o` in a `-` line and `n` in a `+` line. They stay logic. `facts` lists every qualifying pair under `replacements` (`old`, `new`, `hunk_ids`, `files`, `exceptions`), sorted by pair, file and id.
+
 ## Everything else
 
 Logic.

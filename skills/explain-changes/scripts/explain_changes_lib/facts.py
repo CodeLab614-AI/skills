@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from . import mechanical, ranges, rules
+from . import mechanical, ranges, replacements, rules
 from .diffparse import diff_files, untracked_files
 from .model import FileChange, Hunk
 from .ranges import RangeSpec
@@ -24,6 +24,7 @@ class FactsContext:
         self.files, self.hunks = files, hunks
         self.batches: List[Dict] = []
         self.notices: List[Dict] = []
+        self.replacements: List[Dict] = []
 
 
 Step = Callable[[FactsContext], None]
@@ -35,7 +36,12 @@ def classify(ctx: FactsContext) -> None:
 
 
 def repeated_replacements(ctx: FactsContext) -> None:
-    """Task 8: repeated replacements. No-op until then."""
+    """Token replacements repeated across files; pure hunks become mechanical."""
+    ctx.replacements = replacements.find_repeated_replacements(ctx.hunks)
+    marked = {id(h) for h in ctx.hunks if h.mechanical_kind == replacements.KIND}
+    for fc in ctx.files:
+        if any(id(h) in marked for h in fc.hunks):
+            mechanical.refresh_file_class(fc)
 
 
 def targets_and_batches(ctx: FactsContext) -> None:
@@ -108,6 +114,7 @@ def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Dict]] = N
                      "authors": list(spec.exclude_authors),
                      "dropped_hunks": dropped},
         "rule_files": rules.find_rule_files(repo, [f.path for f in ctx.files]),
+        "replacements": ctx.replacements,
         "batches": ctx.batches,
         "totals": compute_totals(ctx.files, ctx.hunks),
         "notices": ctx.notices,

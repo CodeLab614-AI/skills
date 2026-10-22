@@ -118,6 +118,14 @@ def _set(fc: FileChange, kind: str) -> None:
         h.klass, h.mechanical_kind = "mechanical", kind
 
 
+def refresh_file_class(fc: FileChange) -> None:
+    """A file is mechanical only if all its hunks are; mixed kinds read as whitespace."""
+    kinds = [h.mechanical_kind for h in fc.hunks]
+    if kinds and all(kinds):
+        fc.klass = "mechanical"
+        fc.mechanical_kind = kinds[0] if len(set(kinds)) == 1 else "whitespace"
+
+
 def classify(repo: Path, files: List[FileChange], hunks: List[Hunk]) -> None:
     """Mark class / mechanical_kind on every hunk and file (in place)."""
     repo = Path(repo)
@@ -143,11 +151,7 @@ def classify(repo: Path, files: List[FileChange], hunks: List[Hunk]) -> None:
                     and fc.old_mode == fc.new_mode):
                 _set(fc, "move")
             continue
-        kinds = []
         for h in fc.hunks:
             if is_whitespace_only(h):
                 h.klass, h.mechanical_kind = "mechanical", "whitespace"
-            kinds.append(h.mechanical_kind)
-        if all(kinds):
-            fc.klass = "mechanical"
-            fc.mechanical_kind = kinds[0] if len(set(kinds)) == 1 else "whitespace"
+        refresh_file_class(fc)
