@@ -8,7 +8,7 @@
 - Separates mechanical changes (lockfiles, generated files, whitespace-only edits, moved code, repeated replacements) from logic, deterministically. When in doubt, a change counts as logic.
 - Crosses each change with your project rules (`AGENTS.md`, `CLAUDE.md`, `.cursor/rules/**` and similar) and says which rules it touches and whether they seem to be met.
 - Checks every citation against the real diff. A citation that cannot be confirmed is marked as unverified, never presented as fact.
-- Leaves out what came from the base branch, from other people's merged branches and from other authors, if you choose so. Nothing of yours is hidden: when in doubt, it is included.
+- Leaves out what came from the base branch, from other people's merged branches and from other authors, if you choose so. Nothing of yours is hidden: when in doubt, it is included. A change of file mode (for example making a script executable) is always shown as logic, even next to a whitespace edit, and a file the script cannot read (a nested repository or an unreadable file) is reported in a notice instead of being silently dropped.
 
 ## What it does not do
 
@@ -22,10 +22,12 @@
 
 Git and Python 3.9 or newer. Nothing else: no `pip install`, no `gh`, no `jira`.
 
+The heredoc examples in the skill assume a POSIX shell (bash, zsh). On Windows PowerShell the agent pipes a here-string to the command instead (`@'` ... `'@ | python ...`).
+
 ## The flow in 6 steps
 
 1. **Detect.** The script inspects the repo: branch, base branch, your commits, merged branches that are not yours, other authors' commits, uncommitted changes, the last review and the rule files found.
-2. **Questions.** Only the ones that apply: what to review (the whole branch, only what is new since your last review, from a commit you choose, only uncommitted work, or the commit that merged the branch), whether to leave out merged branches that are not yours, and whether to leave out other authors' commits. A question with a single possible answer is not asked. Then one summary line: what is reviewed, against which base and how many rules were found.
+2. **Questions.** Only the ones that apply: what to review (the whole branch, only what is new since your last review, from a commit you choose, only uncommitted work, or the commit that merged or squashed the branch), whether to leave out merged branches that are not yours, and whether to leave out other authors' commits. A question with a single possible answer is not asked. Then one summary line: what is reviewed, against which base and how many rules were found.
 3. **Facts.** The agent turns your rules into structured targets and the script computes the diff against the merge-base, classifies mechanical against logic, applies the rule targets and splits very large changes into batches.
 4. **Interpretation.** An isolated interpreter (a fresh subagent where the agent supports it; otherwise the same conversation, and the report says so) groups the logic changes, orders them for reading and relates them to the rules.
 5. **Verify and report.** The script verifies every citation, adds any logic that was not grouped to an "Ungrouped" group so nothing is lost, and writes `.explain-changes/reporte.md`.
@@ -51,6 +53,15 @@ Everything lives in `.explain-changes/` at the root of the repo:
 | `estado/<branch>-<hash>.json` | Per-branch state: last reviewed commit and fingerprints of reviewed changes. Kept between runs. |
 
 Before writing, the script adds `/.explain-changes/` to `.git/info/exclude` (a local file, never committed) and confirms with `git check-ignore` that it is excluded. If it cannot guarantee that, it writes nothing (see `not_excluded`). Each run removes only the files the skill itself created earlier, and removes the state of branches that no longer exist or are already merged into the base. Your tracked and untracked files are never touched, and nothing is ever committed.
+
+### What "from a commit" and merged branches mean
+
+- **From a commit** is inclusive: you pick a commit and the review starts with that commit's own change and includes everything after it (`--from-commit`). Picking the first commit of the repository works too.
+- **A branch that was already merged.** If it was merged with a merge commit or squashed, the commit that merged it is offered and recommended. If it was merged by content (the same files now match the base) or by fast-forward, a single commit would cover only part of your work, so the whole branch since the merge-base is recommended when there is one, and "the merge commit" is not offered.
+
+### What counts as mechanical
+
+Lockfiles, generated files, moved files, repeated token replacements and whitespace-only edits. The whitespace rule keeps word boundaries: `foo( a )` to `foo(a)` or `x=1` to `x = 1` is mechanical, but `a b` to `ab` or `"Hello World"` to `"HelloWorld"` is logic. In Python, YAML, Makefiles and similar files a changed indentation is logic. A file whose mode changed never gets whitespace-mechanical hunks. When in doubt, it is logic.
 
 ## Only what is new
 

@@ -150,6 +150,47 @@ class MechanicalTests(RepoTestCase):
         repo.commit("bin")
         self.assertEqual(_file(_facts(repo, "--from", "main"), "img.bin")["class"], "logic")
 
+    def test_mode_change_with_whitespace_edit_is_logic(self):
+        repo = self._base({"run.sh": "x=1\n"})
+        repo.write("run.sh", "x = 1\n")
+        (repo.path / "run.sh").chmod(0o755)
+        repo.commit("space+chmod")
+        facts = _facts(repo, "--from", "main")
+        f = _file(facts, "run.sh")
+        self.assertEqual((f["old_mode"], f["new_mode"]), ("100644", "100755"))
+        self.assertEqual(f["class"], "logic")
+        self.assertTrue(all(h["class"] == "logic" for h in facts["hunks"]))
+
+    def test_mode_change_survives_foreign_subtraction(self):
+        from explain_changes_lib import facts as facts_mod, ranges
+        from explain_changes_lib.model import FileChange
+        h = Hunk("run.sh", 1, 1, 1, 1, ["x=1"], ["x = 1"])
+        fc = FileChange(path="run.sh", status="modified", old_mode="100644",
+                        new_mode="100755", hunks=[h])
+        ctx = facts_mod.FactsContext(None, ranges.RangeSpec(), None, False, [fc], [h])
+        orig = ranges.subtract
+        ranges.subtract = lambda hunks, foreign: ([], list(hunks))
+        try:
+            facts_mod._apply_subtraction(ctx, {})
+        finally:
+            ranges.subtract = orig
+        self.assertEqual([f.path for f in ctx.files], ["run.sh"])
+        self.assertEqual(ctx.files[0].hunks, [])
+
+    def test_word_boundary_removal_is_logic(self):
+        mk = lambda r, a: Hunk("f.ts", 1, len(r), 1, len(a), r, a)
+        self.assertFalse(mechanical.is_whitespace_only(mk(['s = "Hello World"'], ['s = "HelloWorld"'])))
+        self.assertFalse(mechanical.is_whitespace_only(mk(["a b"], ["ab"])))
+        self.assertTrue(mechanical.is_whitespace_only(mk(["foo( a )"], ["foo(a)"])))
+        self.assertTrue(mechanical.is_whitespace_only(mk(["a   b"], ["a b"])))
+        self.assertTrue(mechanical.is_whitespace_only(mk(["x=1"], ["x = 1"])))
+
+    def test_string_edit_not_whitespace_end_to_end(self):
+        repo = self._base({"a.ts": 's = "Hello World";\n'})
+        repo.write("a.ts", 's = "HelloWorld";\n')
+        repo.commit("str")
+        self.assertEqual(_file(_facts(repo, "--from", "main"), "a.ts")["class"], "logic")
+
     def test_unit_helpers(self):
         self.assertTrue(mechanical.is_lockfile("sub/dir/Cargo.lock"))
         self.assertFalse(mechanical.is_lockfile("Cargo.toml"))

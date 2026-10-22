@@ -15,7 +15,7 @@
 
 ## Whitespace (`mechanical_kind: whitespace`)
 
-The `-` and `+` lines of the hunk are equal line by line once all whitespace is removed (equivalent to `-w`); lines that are only whitespace are ignored. Joining or splitting lines is logic. A reindentation that also changes one character is logic.
+The `-` and `+` lines of the hunk are equal line by line once whitespace is normalized at word boundaries; lines that are only whitespace are ignored. Normalizing means: every whitespace run between two word characters (`[\w]`) becomes one space, and whitespace next to a non-word character is dropped. So `foo( a )` to `foo(a)` and `x=1` to `x = 1` are mechanical, but `a b` to `ab` or `"Hello World"` to `"HelloWorld"` is logic. Joining or splitting lines is logic. A reindentation that also changes one character is logic. A file whose file mode changed (for example `100644` to `100755`) never gets whitespace-mechanical hunks: its hunks stay logic, and the file stays in the facts even if every hunk was dropped as someone else's.
 
 In indentation-significant files (`.py`, `.pyi`, `.yml`, `.yaml`, `.mk`, `.coffee`, `.pug`, `.haml`, `.sass`, `.styl`, `Makefile`, `GNUmakefile`) a hunk where any line's leading indentation changed is logic. Spacing changes inside a line (`x=1` to `x = 1`) stay mechanical. Files whose only change is line endings (`eol_only`) are mechanical whitespace too (a CRLF change does not alter leading indentation, so this holds for `.py` as well); the `eol_only` flag stays on the file.
 

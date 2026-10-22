@@ -21,8 +21,28 @@ from explain_changes_lib.bundle import bundle as bundle_mod  # noqa: E402
 from explain_changes_lib import report as report_mod  # noqa: E402
 
 
+def _setup_io() -> None:
+    """JSON is always UTF-8, whatever the locale: lossy on output, strict on input."""
+    for stream, errors in ((sys.stdout, "replace"), (sys.stdin, "strict")):
+        try:
+            stream.reconfigure(encoding="utf-8", errors=errors)
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+def _read_stdin() -> str:
+    try:
+        return sys.stdin.read()
+    except UnicodeDecodeError:
+        raise BlockedError("bad_input", "Standard input is not valid UTF-8.")
+
+
 def _emit(payload: dict, code: int = 0) -> int:
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    try:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except (UnicodeError, ValueError):
+        # Never let the output encoding break the answer: fall back to plain ASCII JSON.
+        sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
     return code
 
 
@@ -43,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("facts")
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--from", dest="from_ref")
+    group.add_argument("--from-commit", dest="from_commit")
     group.add_argument("--commit")
     p.add_argument("--include-uncommitted", action="store_true")
     p.add_argument("--exclude-merge", action="append", default=[])
@@ -71,7 +92,7 @@ def find_repo(cwd: Path) -> Path:
 
 def _range_spec(args) -> RangeSpec:
     return RangeSpec(
-        from_ref=args.from_ref, commit=args.commit,
+        from_ref=args.from_ref, commit=args.commit, from_commit=args.from_commit,
         include_uncommitted=args.include_uncommitted,
         exclude_merges=list(args.exclude_merge), include_merges=list(args.include_merge),
         exclude_authors=list(args.exclude_author))
@@ -80,14 +101,14 @@ def _range_spec(args) -> RangeSpec:
 def _read_targets(args):
     if not args.targets_stdin:
         return None
-    return load_targets(sys.stdin.read())
+    return load_targets(_read_stdin())
 
 
 def _read_labels(args):
     """``labels`` JSON object on stdin, only with --labels-stdin."""
     if not args.labels_stdin:
         return None
-    raw = sys.stdin.read()
+    raw = _read_stdin()
     if not raw.strip():
         return None
     try:
@@ -101,6 +122,7 @@ def _read_labels(args):
 
 
 def main(argv=None) -> int:
+    _setup_io()
     try:
         args = build_parser().parse_args(argv)
         repo = find_repo(Path.cwd())
@@ -112,14 +134,18 @@ def main(argv=None) -> int:
         if args.command == "bundle":
             return _emit(bundle_mod(repo, args.batch))
         if args.command == "verify":
-            interp = verify_mod.parse_interpretation(sys.stdin.read())
+            interp = verify_mod.parse_interpretation(_read_stdin())
             result = verify_mod.verify(repo, verify_mod.load_facts(repo), interp)
             return _emit(verify_mod.summary(verify_mod.write_verified(repo, result), result))
         return _emit(report_mod.write_report(repo, args.lang, _read_labels(args)))
     except BlockedError as exc:
         return _emit({"ok": False, "error": {"code": exc.code, "message": exc.message}}, 2)
     except Exception as exc:  # internal error
-        return _emit({"ok": False, "error": {"code": "internal_error", "message": str(exc)}}, 1)
+        try:
+            message = str(exc)
+        except Exception:
+            message = exc.__class__.__name__
+        return _emit({"ok": False, "error": {"code": "internal_error", "message": message}}, 1)
 
 
 if __name__ == "__main__":

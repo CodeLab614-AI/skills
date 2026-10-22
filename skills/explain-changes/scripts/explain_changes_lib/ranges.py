@@ -22,6 +22,7 @@ ForeignLines = Dict[str, "Counter[Tuple[str, str]]"]
 class RangeSpec:
     from_ref: Optional[str] = None
     commit: Optional[str] = None
+    from_commit: Optional[str] = None
     include_uncommitted: bool = False
     exclude_merges: List[str] = field(default_factory=list)
     include_merges: List[str] = field(default_factory=list)
@@ -29,6 +30,7 @@ class RangeSpec:
 
     def to_json(self) -> Dict:
         return {"from": self.from_ref, "commit": self.commit,
+                "from_commit": self.from_commit,
                 "include_uncommitted": self.include_uncommitted,
                 "exclude_merges": list(self.exclude_merges),
                 "include_merges": list(self.include_merges),
@@ -60,7 +62,7 @@ def normalize_spec(repo: Path, spec: RangeSpec) -> RangeSpec:
     """Resolve user-given merge SHAs to full SHAs; unknown ones are bad_input."""
     repo = Path(repo)
     return RangeSpec(
-        from_ref=spec.from_ref, commit=spec.commit,
+        from_ref=spec.from_ref, commit=spec.commit, from_commit=spec.from_commit,
         include_uncommitted=spec.include_uncommitted,
         exclude_merges=list(dict.fromkeys(_need(repo, r) for r in spec.exclude_merges)),
         include_merges=list(dict.fromkeys(_need(repo, r) for r in spec.include_merges)),
@@ -73,8 +75,12 @@ def resolve_range(repo: Path, spec: RangeSpec) -> Tuple[str, Optional[str]]:
     if spec.commit:
         sha = _need(repo, spec.commit)
         return (_rev(repo, sha + "^1") or EMPTY_TREE), sha
+    if spec.from_commit:  # "from this commit", the commit itself included
+        sha = _need(repo, spec.from_commit)
+        old = _rev(repo, sha + "^1") or EMPTY_TREE
+        return old, None if spec.include_uncommitted else _rev(repo, "HEAD")
     if not spec.from_ref:
-        raise BlockedError("bad_input", "Either --from or --commit is required.")
+        raise BlockedError("bad_input", "One of --from, --from-commit or --commit is required.")
     from_sha = _need(repo, spec.from_ref)
     head = _rev(repo, "HEAD")
     old = from_sha
@@ -137,6 +143,11 @@ def _merge_parents(repo: Path, sha: str) -> List[str]:
     return git_text(repo, ["log", "-1", "--format=%P", sha]).split()
 
 
+def _log_range(old: str, end: str) -> str:
+    """A ``log`` range; the empty tree (a root commit's parent) means all history."""
+    return end if old == EMPTY_TREE else "%s..%s" % (old, end)
+
+
 def _range_end(spec: RangeSpec, new: Optional[str]) -> str:
     return new or "HEAD"
 
@@ -144,7 +155,7 @@ def _range_end(spec: RangeSpec, new: Optional[str]) -> str:
 def _auto_foreign_merges(repo: Path, spec: RangeSpec, old: str, end: str) -> List[str]:
     """Merges in range that only bring in the base branch (never the user's work)."""
     base, _sha = _base_sha(repo)
-    res = run_git(repo, ["log", "--merges", "--first-parent", "--format=%H", "%s..%s" % (old, end)], check=False)
+    res = run_git(repo, ["log", "--merges", "--first-parent", "--format=%H", _log_range(old, end)], check=False)
     merges = res.out.decode("utf-8", errors="replace").split() if res.code == 0 else []
     chosen = []
     for sha in merges:
@@ -171,7 +182,7 @@ def _author_commits(repo: Path, spec: RangeSpec, old: str, end: str) -> List[Tup
     if not spec.exclude_authors:
         return []
     wanted = {a.lower() for a in spec.exclude_authors}
-    res = run_git(repo, ["log", "--no-merges", "--format=%H%x1f%ae", "%s..%s" % (old, end)],
+    res = run_git(repo, ["log", "--no-merges", "--format=%H%x1f%ae", _log_range(old, end)],
                   check=False)
     rows = [l.split("\x1f") for l in res.out.decode("utf-8", errors="replace").split("\n") if l]
     return [(sha, email) for sha, email in rows if email.lower() in wanted]
@@ -251,7 +262,7 @@ def mark_resolved_in_merge(repo: Path, hunks: List[Hunk], merges: List[str]) -> 
 
 def merges_in_range(repo: Path, spec: RangeSpec, old: str, new: Optional[str]) -> List[str]:
     res = run_git(repo, ["log", "--merges", "--first-parent", "--format=%H",
-                         "%s..%s" % (old, _range_end(spec, new))], check=False)
+                         _log_range(old, _range_end(spec, new))], check=False)
     return res.out.decode("utf-8", errors="replace").split() if res.code == 0 else []
 
 
@@ -268,7 +279,7 @@ def commits_in_range(repo: Path, spec: RangeSpec, old: str,
     if spec.commit:
         args = ["log", "--no-walk", "--no-merges", fmt, new or spec.commit]
     else:
-        args = ["log", "--no-merges", "--reverse", fmt, "%s..%s" % (old, _range_end(spec, new))]
+        args = ["log", "--no-merges", "--reverse", fmt, _log_range(old, _range_end(spec, new))]
     res = run_git(repo, args, check=False)
     if res.code != 0:
         return [], False

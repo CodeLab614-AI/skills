@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
-from .gitcmd import run_git
+from .gitcmd import blob_heads, run_git
 from .model import FileChange, Hunk
 
 LOCKFILES = frozenset([
@@ -36,18 +36,31 @@ def is_indent_sensitive(path: str) -> bool:
     return name in INDENT_SENSITIVE_NAMES or name.endswith(INDENT_SENSITIVE_SUFFIXES)
 
 
+def _normalize(line: str) -> str:
+    """Whitespace runs between two word characters become one space; any other
+    whitespace is dropped. ``foo( a )`` -> ``foo(a)`` but ``a b`` stays ``a b``."""
+    parts = line.split()
+    if not parts:
+        return ""
+    out = parts[0]
+    for part in parts[1:]:
+        out += (" " if (out[-1].isalnum() or out[-1] == "_")
+                and (part[0].isalnum() or part[0] == "_") else "") + part
+    return out
+
+
 def _squashed(lines: Iterable[str]) -> List[Tuple[str, str]]:
-    """(leading indentation, text without whitespace) per line; blank lines dropped."""
+    """(leading indentation, word-boundary-normalized text) per line; blank lines dropped."""
     out = []
     for line in lines:
-        text = "".join(line.split())
+        text = _normalize(line)
         if text:
             out.append((line[:len(line) - len(line.lstrip())], text))
     return out
 
 
 def is_whitespace_only(hunk: Hunk) -> bool:
-    """Per-line equal once whitespace is removed (like ``-w``); blank lines ignored.
+    """Per-line equal once whitespace is normalized at word boundaries; blank lines ignored.
 
     In indentation-significant files a changed leading indentation is logic.
     """
@@ -95,21 +108,24 @@ def generated_reason(repo: Path, path: str, head_lines: List[str],
     return None
 
 
-def _head_lines(repo: Path, fc: FileChange) -> List[str]:
-    """First lines of the new content, bounded. Blob first, then the disk."""
+def _head_text(data: bytes) -> List[str]:
+    return data.decode("utf-8", errors="replace").split("\n")[:HEAD_LINES]
+
+
+def _head_lines(repo: Path, fc: FileChange, blob_heads: Optional[Dict[str, bytes]] = None) -> List[str]:
+    """First lines of the new content, bounded. Blob first, then the disk.
+
+    ``blob_heads`` holds the already-read blob prefixes (one batch for all files)."""
     data = b""
     if fc.new_blob:
-        res = run_git(repo, ["cat-file", "blob", fc.new_blob], check=False)
-        if res.code == 0:
-            data = res.out[:HEAD_BYTES]
+        data = (blob_heads or {}).get(fc.new_blob, b"")[:HEAD_BYTES]
     if not data:
         try:
             with open(repo / fc.path, "rb") as fh:
                 data = fh.read(HEAD_BYTES)
         except OSError:
             return []
-    text = data.decode("utf-8", errors="replace")
-    return text.split("\n")[:HEAD_LINES]
+    return _head_text(data)
 
 
 def _set(fc: FileChange, kind: str) -> None:
@@ -132,6 +148,9 @@ def classify(repo: Path, files: List[FileChange], hunks: List[Hunk]) -> None:
     for h in hunks:
         h.klass, h.mechanical_kind = "logic", None
     attr_paths = generated_attr_paths(repo, [f.path for f in files if f.status != "deleted"])
+    heads = blob_heads(repo, [f.new_blob for f in files
+                              if f.new_blob and f.status != "deleted"
+                              and not f.binary and not f.too_large], HEAD_BYTES)
     for fc in files:
         fc.klass, fc.mechanical_kind = "logic", None
         if is_lockfile(fc.path):
@@ -140,7 +159,7 @@ def classify(repo: Path, files: List[FileChange], hunks: List[Hunk]) -> None:
         if fc.status != "deleted":
             head = []
             if not fc.binary and not fc.too_large:
-                head = _head_lines(repo, fc)
+                head = _head_lines(repo, fc, heads)
             if generated_reason(repo, fc.path, head, attr_paths):
                 _set(fc, "generated")
                 continue
@@ -151,6 +170,8 @@ def classify(repo: Path, files: List[FileChange], hunks: List[Hunk]) -> None:
                     and fc.old_mode == fc.new_mode):
                 _set(fc, "move")
             continue
+        if fc.old_mode and fc.new_mode and fc.old_mode != fc.new_mode:
+            continue  # a mode change is never hidden inside "mechanical"
         for h in fc.hunks:
             if is_whitespace_only(h):
                 h.klass, h.mechanical_kind = "mechanical", "whitespace"

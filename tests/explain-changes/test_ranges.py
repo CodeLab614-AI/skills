@@ -325,5 +325,41 @@ class SubtractTests(unittest.TestCase):
         self.assertEqual(ranges.subtract([h], foreign), ([h], []))
 
 
+class FromCommitTests(RepoTestCase):
+    def test_from_commit_is_inclusive(self):
+        repo = self.make_repo("main")
+        repo.write("a.ts", "a1\n")
+        repo.commit("init")
+        repo.write("a.ts", "a1\na2\n")
+        c1 = repo.commit("c1")
+        repo.write("b.ts", "b1\n")
+        repo.commit("c2")
+        facts, _ = _facts(repo, "--from-commit", c1)
+        self.assertEqual(_paths(facts), ["a.ts", "b.ts"])
+        self.assertEqual([c["subject"] for c in facts["commits"]], ["c1", "c2"])
+        facts, _ = _facts(repo, "--from", c1)  # --from stays exclusive
+        self.assertEqual(_paths(facts), ["b.ts"])
+
+    def test_from_commit_root_commit(self):
+        repo = self.make_repo("main")
+        repo.write("a.ts", "a1\n")
+        root = repo.commit("root")
+        repo.write("b.ts", "b1\n")
+        repo.commit("c2")
+        facts, _ = _facts(repo, "--from-commit", root)
+        self.assertEqual(_paths(facts), ["a.ts", "b.ts"])
+        self.assertEqual([c["subject"] for c in facts["commits"]], ["root", "c2"])
+
+    def test_from_commit_with_uncommitted(self):
+        repo = self.make_repo("main")
+        repo.write("a.ts", "a1\n")
+        repo.commit("init")
+        repo.write("a.ts", "a1\na2\n")
+        c1 = repo.commit("c1")
+        repo.write("c.ts", "c\n")
+        facts, _ = _facts(repo, "--from-commit", c1, "--include-uncommitted")
+        self.assertEqual(_paths(facts), ["a.ts", "c.ts"])
+
+
 if __name__ == "__main__":
     unittest.main()

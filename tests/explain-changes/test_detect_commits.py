@@ -148,8 +148,32 @@ class DetectCommitsTests(RepoTestCase):
         data = _detect(repo)
         self.assertEqual(data["merged"], {"how": "fast_forward", "commit": head})
         q = _question(data, "scope")
-        self.assertTrue(_opt(q, "merge_commit")["recommended"])
-        self.assertEqual(_opt(q, "merge_commit")["facts_args"], ["--commit", head])
+        # No merge commit exists, and the merge-base is HEAD itself (no whole_branch):
+        # only the commit picker remains, so the question is auto-answered.
+        self.assertIsNone(q)
+        auto = [n for n in data["notices"] if n["code"] == "auto_answered"][0]["params"]
+        self.assertEqual(auto["option"], "other_commit")
+        self.assertEqual(data["summary"]["scope_option"], "other_commit")
+
+    def test_merged_tree_recommends_whole_branch(self):
+        repo = self._base_repo()
+        repo.checkout("feature", create=True)
+        repo.write("f.txt", "f\n")
+        repo.commit("f1")
+        repo.write("g.txt", "g\n")
+        repo.commit("f2")
+        repo.checkout("main")
+        repo.write("f.txt", "f\n")
+        repo.commit("retyped f")
+        repo.write("g.txt", "g\n")
+        tree_commit = repo.commit("retyped g")
+        repo.checkout("feature")
+        data = _detect(repo)
+        self.assertEqual(data["merged"], {"how": "tree", "commit": tree_commit})
+        q = _question(data, "scope")
+        _check_one_recommended(self, data)
+        self.assertTrue(_opt(q, "whole_branch")["recommended"])
+        self.assertIsNone(_opt(q, "merge_commit"))
         self.assertIsNotNone(_opt(q, "other_commit"))
 
     def test_fresh_branch_at_base_tip_is_not_merged(self):
@@ -193,7 +217,7 @@ class DetectCommitsTests(RepoTestCase):
         q = _question(data, "scope")
         _check_one_recommended(self, data)
         self.assertTrue(_opt(q, "uncommitted_only")["recommended"])
-        self.assertFalse(_opt(q, "merge_commit")["recommended"])
+        self.assertIsNone(_opt(q, "merge_commit"))
         self.assertIsNotNone(_opt(q, "other_commit"))
 
     def test_unrelated_later_merge_on_base_is_not_how_merge(self):
@@ -256,7 +280,7 @@ class DetectCommitsTests(RepoTestCase):
         self.assertEqual(data["summary"]["scope_option"], "from_commit")
         auto = [n for n in data["notices"] if n["code"] == "auto_answered"][0]["params"]
         self.assertEqual(auto["option"], "from_commit")
-        self.assertEqual(auto["facts_args"], ["--from"])
+        self.assertEqual(auto["facts_args"], ["--from-commit"])
         self.assertEqual(auto["params"]["commits"][0]["subject"], "init")
 
     def test_scope_only_new_with_last_review(self):

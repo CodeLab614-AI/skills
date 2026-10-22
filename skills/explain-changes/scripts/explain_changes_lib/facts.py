@@ -111,7 +111,7 @@ def _apply_subtraction(ctx: FactsContext, foreign: ranges.ForeignLines) -> List[
             survivors.append(fc)
             continue
         fc.hunks = [h for h in fc.hunks if id(h) in keep_ids]
-        if not fc.hunks:
+        if not fc.hunks and not (fc.old_mode and fc.new_mode and fc.old_mode != fc.new_mode):
             continue  # every hunk was foreign: the file is not the user's change
         fc.additions = sum(len(h.added) for h in fc.hunks)
         fc.deletions = sum(len(h.removed) for h in fc.hunks)
@@ -126,11 +126,13 @@ def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Target]] =
     spec = ranges.normalize_spec(repo, spec)
     old, new = ranges.resolve_range(repo, spec)
     files = diff_files(repo, old, new)
+    notices: List[Dict] = []
     if new is None:
         tracked = {f.path for f in files}
-        files += [f for f in untracked_files(repo) if f.path not in tracked]
+        files += [f for f in untracked_files(repo, notices) if f.path not in tracked]
     hunks = [h for f in files for h in f.hunks]
     ctx = FactsContext(repo, spec, targets, only_new, files, hunks)
+    ctx.notices = notices
 
     foreign = ranges.foreign_lines(repo, spec, old, new)
     dropped = _apply_subtraction(ctx, foreign)

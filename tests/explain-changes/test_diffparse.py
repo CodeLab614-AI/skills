@@ -234,8 +234,8 @@ class DiffParseTests(RepoTestCase):
         self.assertNotEqual(other, c1)
         (a2,) = diffparse.diff_files(repo.path, base, other)
         self.assertEqual(a2.hunks[0].fingerprint, a.hunks[0].fingerprint)
-        self.assertEqual(
-            diffparse.fingerprint("a.txt", ["x"], ["y"]), a.hunks[0].fingerprint)
+        from explain_changes_lib.model import hunk_fingerprint
+        self.assertEqual(hunk_fingerprint("a.txt", ["x"], ["y"]), a.hunks[0].fingerprint)
 
     def test_parse_hunks_counts_and_markers(self):
         patch = (b"diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n"

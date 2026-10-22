@@ -53,8 +53,6 @@ For `--labels-stdin`, send a JSON object of strings with every key below, transl
 | `h_unverified` | Unverified citations |
 | `h_provenance` | Provenance |
 | `files` | files |
-| `additions` | additions |
-| `deletions` | deletions |
 | `logic_lines` | logic lines |
 | `mechanical_lines` | mechanical lines |
 | `rules_touched` | rules touched |
@@ -62,9 +60,7 @@ For `--labels-stdin`, send a JSON object of strings with every key below, transl
 | `complies` | Complies |
 | `seems_not` | Seems not to comply |
 | `not_applicable` | Not applicable |
-| `rule` | rule |
 | `ungrouped` | Ungrouped |
-| `unnamed` | Unnamed group |
 | `changed_since_review` | Changed since your last review |
 | `rules_label` | Rules |
 | `kind_lockfile` | Lockfiles |
@@ -72,7 +68,6 @@ For `--labels-stdin`, send a JSON object of strings with every key below, transl
 | `kind_whitespace` | Whitespace and formatting |
 | `kind_move` | Moved code |
 | `kind_repeated_replacement` | Repeated replacements |
-| `replaces` | replaced by |
 | `in_files` | files |
 | `exceptions` | Exceptions |
 | `unverified_citation` | unverified citation |

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess  # noqa: F401  (kept out: all Git goes through gitcmd)
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -200,7 +199,7 @@ def _provenance(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
     rng = facts.get("range") or {}
     spec = rng.get("spec") or {}
     ex = facts.get("excluded") or {}
-    out = ["- %s: %s" % (labels["from"], _code(spec.get("from") or spec.get("commit")
+    out = ["- %s: %s" % (labels["from"], _code(spec.get("from") or spec.get("from_commit") or spec.get("commit")
                                               or rng.get("old"))),
            "- %s: %s" % (labels["to"], _code(rng["new"]) if rng.get("new")
                          else labels["working_tree"]),

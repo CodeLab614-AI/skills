@@ -178,7 +178,8 @@ def _patch_ids(repo: Path, patch: bytes) -> List[Tuple[str, str]]:
     return pairs
 
 
-def find_merged(repo: Path, mb: Optional[str], base: str) -> Optional[Dict]:
+def find_merged(repo: Path, mb: Optional[str], base: str,
+                notices: Optional[List[Dict]] = None) -> Optional[Dict]:
     """Detect whether HEAD's work already landed in the base: merge, squash or tree."""
     if mb is None:
         return None
@@ -206,10 +207,14 @@ def find_merged(repo: Path, mb: Optional[str], base: str) -> Optional[Dict]:
         if mine[0][0] in theirs:
             return {"how": "squash", "commit": theirs[mine[0][0]]}
     files = _lines(repo, ["diff", "--name-only", mb, "HEAD"])
-    if files and _ok(repo, ["diff", "--quiet", "HEAD", base, "--", *files]):
-        last = _text_or_none(repo, ["log", "-1", "--format=%H", base, "--", *files])
-        if last:
-            return {"how": "tree", "commit": last}
+    try:
+        if files and _ok(repo, ["diff", "--quiet", "HEAD", base, "--", *files]):
+            last = _text_or_none(repo, ["log", "-1", "--format=%H", base, "--", *files])
+            if last:
+                return {"how": "tree", "commit": last}
+    except OSError:  # E2BIG: too many changed paths for one command line
+        if notices is not None:
+            notices.append({"code": "heuristic_skipped", "params": {"heuristic": "tree"}})
     return None
 
 
@@ -272,7 +277,8 @@ def scope_options(repo: Path, info: Dict) -> List[Dict]:
     """Options for the scope question.
 
     from_commit and other_commit are pickers: their facts_args are only a prefix
-    (["--from"] / ["--commit"]) and the caller appends the chosen sha."""
+    (["--from-commit"] / ["--commit"]) and the caller appends the chosen sha.
+    from_commit is inclusive: the picked commit's own change is part of the range."""
     mb, pending = info["merge_base"], sum(info["uncommitted"].values()) > 0
     extra = ["--include-uncommitted"] if pending else []
     commits = [{"sha": c["sha"], "subject": c["subject"]}
@@ -284,7 +290,8 @@ def scope_options(repo: Path, info: Dict) -> List[Dict]:
     fresh = review is not None and (review.get("head") != info["head"] or pending)
     has_own = mb is not None and mb != info["head"]
     options: List[Dict] = []
-    if info["merged"]:
+    how = info["merged"]["how"] if info["merged"] else None
+    if how in ("merge", "squash"):  # a fast-forward has no commit that stands for the branch
         options.append(_opt("merge_commit", False, ["--commit", info["merged"]["commit"]]))
     if fresh and mb:
         options.append(_opt("only_new", False, ["--from", mb, "--only-new", *extra]))
@@ -293,14 +300,16 @@ def scope_options(repo: Path, info: Dict) -> List[Dict]:
     if info["merged"]:
         options.append(_opt("other_commit", False, ["--commit"], {"commits": commits}))
     else:
-        options.append(_opt("from_commit", False, ["--from"], {"commits": commits}))
+        options.append(_opt("from_commit", False, ["--from-commit"], {"commits": commits}))
     if pending or (not info["on_base"] and has_own):
         options.append(_opt("uncommitted_only", False, ["--from", "HEAD", "--include-uncommitted"]))
     ids = [o["id"] for o in options]
     if not has_own and pending:
         rec = "uncommitted_only"  # nothing of the branch's own: the pending work is the point
-    elif info["merged"]:
+    elif how in ("merge", "squash"):
         rec = "merge_commit"
+    elif how in ("tree", "fast_forward") and has_own:
+        rec = "whole_branch"  # the merge commit would under-cover the branch's work
     elif fresh and mb:
         rec = "only_new"
     else:
@@ -417,7 +426,7 @@ def _describe_changes(repo: Path, info: Dict) -> Dict:
         "diff_size": size,
     }
     if not out["on_base"]:
-        out["merged"] = find_merged(repo, mb, base)
+        out["merged"] = find_merged(repo, mb, base, notices)
         if out["merged"] is None and mb is not None and mb == info["head"]:
             notices.append({"code": "no_own_commits", "params": {"base": base}})
     merged_view = dict(info, **out)

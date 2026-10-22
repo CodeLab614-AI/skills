@@ -58,6 +58,17 @@ class DocsTest(unittest.TestCase):
         for extra in ("fetch_failed", "Python"):
             self.assertIn(extra, text)
 
+    def test_final_review_contracts_are_documented(self):
+        skill = (ROOT / "skills/explain-changes/SKILL.md").read_text(encoding="utf-8")
+        for needle in ("untracked_skipped", "heuristic_skipped", "--from-commit",
+                       "untrusted data", "PowerShell"):
+            self.assertIn(needle, skill, needle)
+        doc = DOC.read_text(encoding="utf-8")
+        for needle in ("--from-commit", "inclusive", "file mode", "PowerShell"):
+            self.assertIn(needle, doc, needle)
+        workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+        self.assertRegex(workflow, r"(?m)^permissions:\n  contents: read$")
+
 
 if __name__ == "__main__":
     unittest.main()

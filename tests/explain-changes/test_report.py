@@ -123,6 +123,20 @@ class RenderTests(unittest.TestCase):
     def test_label_keys_match(self):
         self.assertEqual(set(report.LABELS["en"]), set(report.LABELS["es"]))
 
+    def test_label_keys_are_all_used_and_documented(self):
+        import re
+        from helpers import ROOT
+        base = ROOT / "skills" / "explain-changes"
+        source = (base / "scripts" / "explain_changes_lib" / "report.py").read_text(
+            encoding="utf-8")
+        used = set(re.findall(r'labels\["(\w+)"\]', source))
+        used |= {"complies", "seems_not", "not_applicable"}  # labels[status]
+        used |= {k for k in report.LABELS["en"] if k.startswith("kind_")}  # "kind_" + kind
+        self.assertEqual(set(report.LABELS["en"]), used)
+        doc = (base / "references" / "reporte.md").read_text(encoding="utf-8")
+        documented = set(re.findall(r"^\| `(\w+)` \|", doc, re.M))
+        self.assertEqual(documented, used)
+
 
 class WriteReportTests(RepoTestCase):
     def pipeline(self, repo, interp=None):

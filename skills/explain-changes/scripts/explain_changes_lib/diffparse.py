@@ -4,11 +4,12 @@ from __future__ import annotations
 import difflib
 import os
 import re
+import stat
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .gitcmd import run_git
-from .model import FileChange, Hunk, hunk_fingerprint
+from .model import FileChange, Hunk
 
 MAX_CHANGED_LINES = 20000
 MAX_BLOB_BYTES = 2 * 1024 * 1024
@@ -19,11 +20,7 @@ DIFF_OPTS = ["--no-ext-diff", "--no-textconv", "--no-color", "-M50%",
              "--src-prefix=a/", "--dst-prefix=b/"]
 _HUNK_RE = re.compile(rb"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _STATUS = {"A": "added", "D": "deleted", "M": "modified", "T": "modified",
-           "R": "renamed", "C": "added", "U": "modified"}
-
-
-def fingerprint(path: str, removed: List[str], added: List[str]) -> str:
-    return hunk_fingerprint(path, removed, added)
+           "R": "renamed", "U": "modified"}
 
 
 def _path(raw: bytes) -> str:
@@ -148,8 +145,9 @@ def _raw_entries(repo: Path, refs: List[str]) -> List[Dict]:
     return entries
 
 
-def _numstat(repo: Path, refs: List[str]) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
-    out = run_git(repo, ["diff", "--numstat", "-z", *DIFF_OPTS, *refs]).out
+def _numstat(repo: Path, refs: List[str],
+             extra: Optional[List[str]] = None) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
+    out = run_git(repo, ["diff", "--numstat", "-z", *(extra or []), *DIFF_OPTS, *refs]).out
     toks = out.split(b"\0")
     res, i = {}, 0
     while i < len(toks) and toks[i]:
@@ -189,15 +187,22 @@ def _disk_size(repo: Path, path: str) -> int:
         return 0
 
 
-def _eol_only(repo: Path, refs: List[str], paths: List[str]) -> bool:
-    res = run_git(repo, ["--literal-pathspecs", "diff", "--quiet", "--ignore-cr-at-eol",
-                         *DIFF_OPTS, *refs, "--", *paths], check=False)
-    return res.code == 0
-
-
 def _file_patch(repo: Path, refs: List[str], paths: List[str]) -> bytes:
     return run_git(repo, ["--literal-pathspecs", "diff", "-p", "-U0", *DIFF_OPTS,
                           *refs, "--", *paths]).out
+
+
+_SECTION_RE = re.compile(rb"(?m)^diff --git ")
+
+
+def _range_patches(repo: Path, refs: List[str], count: int) -> Optional[List[bytes]]:
+    """One ``git diff -p -U0`` for the whole range, split into one chunk per raw entry
+    (Git emits the sections in the same order as ``--raw``). ``None`` when the number of
+    sections differs from ``count`` (for example a type change), so the caller falls back
+    to one diff per file."""
+    patch = run_git(repo, ["diff", "-p", "-U0", *DIFF_OPTS, *refs, "--"], timeout=300).out
+    sections = _SECTION_RE.split(patch)[1:]
+    return sections if len(sections) == count else None
 
 
 def diff_files(repo: Path, old: str, new: Optional[str]) -> List[FileChange]:
@@ -205,10 +210,13 @@ def diff_files(repo: Path, old: str, new: Optional[str]) -> List[FileChange]:
     refs = [old] if new is None else [old, new]
     stats = _numstat(repo, refs)
     entries = _raw_entries(repo, refs)
+    # A file with changes that all disappear under --ignore-cr-at-eol only changed line endings.
+    stats_no_eol = _numstat(repo, refs, ["--ignore-cr-at-eol"])
     sizes = _blob_sizes(repo, [e["old_sha"] for e in entries if e["old_mode"] != "160000"]
                         + [e["new_sha"] for e in entries if e["new_mode"] != "160000"])
     changes = []
-    for e in entries:
+    pending: List[Tuple[int, FileChange]] = []  # entry index and file that need hunks
+    for idx, e in enumerate(entries):
         mode = lambda m: None if m == "000000" else m
         sha = lambda s: None if s == ZERO_SHA else s
         is_sub = "160000" in (e["old_mode"], e["new_mode"])
@@ -235,12 +243,28 @@ def diff_files(repo: Path, old: str, new: Optional[str]) -> List[FileChange]:
                 or max(old_size, new_size) > MAX_BLOB_BYTES):
             fc.too_large = True
         if not fc.binary and not fc.too_large and (fc.additions or fc.deletions):
-            paths = [p for p in (fc.old_path, fc.path) if p]
-            hunks, bad = _parse(fc.path, _file_patch(repo, refs, paths))
-            fc.hunks, fc.encoding_issue = hunks, bad
-            fc.eol_only = _eol_only(repo, refs, paths)
+            pending.append((idx, fc))
+            fc.eol_only = fc.path not in stats_no_eol
         changes.append(fc)
+    _fill_hunks(repo, refs, entries, changes, pending)
     return changes
+
+
+def _fill_hunks(repo: Path, refs: List[str], entries: List[Dict],
+                changes: List[FileChange], pending: List[Tuple[int, FileChange]]) -> None:
+    """Parse the hunks of ``pending`` files: from one range-wide diff when no file is
+    huge (a too_large file is never parsed, so it must not be loaded), else per file."""
+    if not pending:
+        return
+    patches = None
+    if not any(fc.too_large for fc in changes):
+        patches = _range_patches(repo, refs, len(entries))
+    for idx, fc in pending:
+        if patches is not None:
+            patch = patches[idx]
+        else:
+            patch = _file_patch(repo, refs, [p for p in (fc.old_path, fc.path) if p])
+        fc.hunks, fc.encoding_issue = _parse(fc.path, patch)
 
 
 def _split_lines(data: bytes) -> List[bytes]:
@@ -252,19 +276,33 @@ def _split_lines(data: bytes) -> List[bytes]:
     return lines
 
 
-def untracked_files(repo: Path) -> List[FileChange]:
+def _skipped(notices: Optional[List[Dict]], path: str, reason: str) -> None:
+    if notices is not None:
+        notices.append({"code": "untracked_skipped",
+                        "params": {"path": path, "reason": reason}})
+
+
+def untracked_files(repo: Path, notices: Optional[List[Dict]] = None) -> List[FileChange]:
+    """Untracked files as added hunks. Entries that cannot be read as a regular file
+    or symlink (nested repos, FIFOs, unreadable files) are skipped with a notice."""
     out = run_git(repo, ["ls-files", "--others", "--exclude-standard", "-z"]).out
     changes = []
     for raw in out.split(b"\0"):
         if not raw:
             continue
         path = _path(raw)
-        if path.endswith("/") or path == WORKSPACE_DIR or path.startswith(WORKSPACE_DIR + "/"):
+        if path == WORKSPACE_DIR or path.startswith(WORKSPACE_DIR + "/"):
+            continue
+        if path.endswith("/"):
+            _skipped(notices, path, "nested_repo")
             continue
         full = repo / path
         is_link = os.path.islink(full)
         try:
             st = os.lstat(full)
+            if not is_link and not stat.S_ISREG(st.st_mode):
+                _skipped(notices, path, "not_regular_file")
+                continue
             if is_link:
                 data = os.fsencode(os.readlink(full))
             elif st.st_size > MAX_BLOB_BYTES:
@@ -273,6 +311,7 @@ def untracked_files(repo: Path) -> List[FileChange]:
                 with open(full, "rb") as fh:
                     data = fh.read()
         except OSError:
+            _skipped(notices, path, "unreadable")
             continue
         mode = "120000" if is_link else ("100755" if st.st_mode & 0o111 else "100644")
         fc = FileChange(path=path, status="untracked", new_mode=mode)
