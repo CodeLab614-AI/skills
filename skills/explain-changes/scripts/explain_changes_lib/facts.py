@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from . import batches, mechanical, ranges, replacements, rules, targets
+from . import batches, mechanical, ranges, replacements, rules, state, targets
+from .detect import current_branch
 from .diffparse import diff_files, untracked_files
 from .model import FileChange, Hunk, Target
 from .ranges import RangeSpec
@@ -53,10 +54,41 @@ def targets_and_batches(ctx: FactsContext) -> None:
 
 
 def review_state(ctx: FactsContext) -> None:
-    """Task 11: per-branch state and --only-new. No-op until then."""
+    """Mark hunks seen/new against the branch state; with --only-new keep only the new.
+
+    Runs before batching so batches and totals describe what is left. Detached HEAD
+    has no state."""
+    saved = state.load_state(ctx.repo, current_branch(ctx.repo))
+    if saved is None:
+        return
+    state.mark_new(ctx.hunks, saved)
+    if not ctx.only_new:
+        return
+    seen_files = set(saved.get("files") or [])
+    survivors: List[FileChange] = []
+    for fc in ctx.files:
+        if not fc.hunks:
+            if fc.path not in seen_files:
+                survivors.append(fc)
+            continue
+        fc.hunks = [h for h in fc.hunks if not h.seen]
+        if not fc.hunks:
+            continue
+        fc.additions = sum(len(h.added) for h in fc.hunks)
+        fc.deletions = sum(len(h.removed) for h in fc.hunks)
+        survivors.append(fc)
+    ctx.files = survivors
+    ctx.hunks = [h for fc in survivors for h in fc.hunks]
+    file_of = {h.id: h.file for h in ctx.hunks}
+    kept: List[Dict] = []
+    for rep in ctx.replacements:
+        ids = [i for i in rep["hunk_ids"] if i in file_of]
+        if ids:
+            kept.append(dict(rep, hunk_ids=ids, files=sorted({file_of[i] for i in ids})))
+    ctx.replacements = kept
 
 
-PIPELINE: List[Step] = [classify, repeated_replacements, targets_and_batches, review_state]
+PIPELINE: List[Step] = [classify, repeated_replacements, review_state, targets_and_batches]
 
 
 def compute_totals(files: List[FileChange], hunks: List[Hunk]) -> Dict[str, int]:

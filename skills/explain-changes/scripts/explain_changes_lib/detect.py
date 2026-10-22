@@ -374,6 +374,25 @@ def detect(repo: Path, fetch: bool = True) -> dict:
     return result
 
 
+def last_review(repo: Path, review: Optional[Dict], head: Optional[str],
+                commits: List[Dict], status_paths: List[str], size: Dict) -> Optional[Dict]:
+    """What changed since the saved review. A rewritten history (saved head no longer
+    an ancestor of HEAD) cannot be measured by commits, so it falls back to the totals."""
+    if review is None:
+        return None
+    saved = review.get("head")
+    reachable = bool(saved and head and _ok(repo, ["merge-base", "--is-ancestor", saved, head]))
+    if reachable:
+        count = _text_or_none(repo, ["rev-list", "--count", saved + "..HEAD"])
+        new_commits = int(count) if count and count.isdigit() else 0
+        new_files = len(set(_lines(repo, ["diff", "--name-only", saved, "HEAD"]))
+                        | set(status_paths))
+    else:
+        new_commits, new_files = len(commits), size["files"]
+    return {"head": saved, "reviewed_at": review.get("reviewed_at"),
+            "head_reachable": reachable, "new_commits": new_commits, "new_files": new_files}
+
+
 def _describe_changes(repo: Path, info: Dict) -> Dict:
     mb, base, branch = info["merge_base"], info["base"], info["branch"]
     notices = info["notices"]
@@ -393,9 +412,7 @@ def _describe_changes(repo: Path, info: Dict) -> Dict:
         "merged": None,
         "on_base": branch == base_short,
         "unpushed": count_unpushed(repo),
-        "last_review": None if review is None else {
-            "head": review.get("head"), "reviewed_at": review.get("reviewed_at"),
-            "hunk_count": len(review.get("hunks", []))},
+        "last_review": last_review(repo, review, info["head"], commits, status_paths, size),
         "rule_files": rules.find_rule_files(repo, changed),
         "diff_size": size,
     }
@@ -406,6 +423,9 @@ def _describe_changes(repo: Path, info: Dict) -> Dict:
     merged_view = dict(info, **out)
     questions, auto, chosen = build_questions(repo, merged_view)
     notices.extend(auto)
+    if out["last_review"] and not out["last_review"]["head_reachable"]:
+        notices.append({"code": "history_rewritten",
+                        "params": {"head": out["last_review"]["head"]}})
     out["questions"] = questions
     out["summary"] = {"scope_option": chosen, "base": base,
                       "rule_count": len(out["rule_files"])}
