@@ -73,10 +73,28 @@ class RenderTests(unittest.TestCase):
         self.assertIn("+2", text)
         self.assertIn("bot@x.io", text)
 
+    def test_user_text_cannot_break_structure(self):
+        facts, verified = small()
+        facts["files"][0]["path"] = "src/we`ird\n## Injected.ts"
+        facts["hunks"][0]["file"] = facts["files"][0]["path"]
+        facts["replacements"][0]["old"] = "a``b\n# H"
+        verified["groups"][0]["name"] = "# Fake\n## Heading"
+        verified["groups"][0]["what"] = "line1\n## Sneaky"
+        verified["rules"][0]["note"] = "x\r\n## Note"
+        verified["unverified"][0]["citation"]["file"] = "bad\n## Cite`.ts"
+        text = report.render(facts, verified, report.LABELS["en"])
+        heads = [l for l in text.split("\n") if l.startswith("#")]
+        self.assertEqual(heads, [
+            "# Change report", "## Summary", "## Rules", "### Complies", "## Logic changes",
+            "### # Fake ## Heading", "## Mechanical changes", "### Lockfiles",
+            "### Repeated replacements", "## Unverified citations", "## Provenance"])
+        self.assertIn("``we`ird ## Injected.ts``", text.replace("`src/", "``"))
+        self.assertIn("```a``b # H```", text)
+
     def test_provenance_lists_commits(self):
         facts, verified = small()
         text = report.render(facts, verified, report.LABELS["en"])
-        self.assertIn("cccccccccc Arregla el login", text)
+        self.assertIn("`cccccccccc` Arregla el login", text)
         self.assertIn(report.LABELS["en"]["commits_truncated"], text)
         facts["commits_truncated"] = False
         text = report.render(facts, verified, report.LABELS["en"])
@@ -142,6 +160,33 @@ class WriteReportTests(RepoTestCase):
         self.assertIn("second.txt", text)
         self.assertEqual(data["path"], ".explain-changes/reporte.md")
         self.assertTrue(data["state_path"].startswith(".explain-changes/estado/"))
+
+    def test_real_pipeline_rules_and_unverified(self):
+        repo = self.make_repo()
+        repo.write("AGENTS.md", "# rules\nbe kind\nbe brief\nbe clear\nbe fast\n")
+        repo.write("a.txt", "base\n")
+        repo.commit("base")
+        repo.checkout("feat", create=True)
+        repo.write("a.txt", "base\nnew\n")
+        repo.commit("change")
+        rule = lambda n, st: {"rule": {"file": "AGENTS.md", "line": n}, "status": st,
+                              "changes": [{"file": "a.txt", "line": 2}], "note": "n%d" % n}
+        interp = {"groups": [{"id": "g", "name": "G", "what": "w", "order": 1,
+                              "locations": [{"file": "a.txt", "start": 2, "end": 2},
+                                            {"file": "ghost.txt", "start": 1, "end": 1}]}],
+                  "rules": [rule(2, "complies"), rule(3, "seems_not"),
+                            rule(4, "not_applicable"), rule(99, "complies")]}
+        code, data = self.pipeline(repo, interp)
+        self.assertEqual(code, 0, data)
+        text = (repo.path / ".explain-changes" / "reporte.md").read_text(encoding="utf-8")
+        self.assertIn("- 3 reglas tocadas", text)
+        self.assertIn("### Cumple", text)
+        self.assertIn("### Parece no cumplir", text)
+        self.assertIn("### No aplica", text)
+        self.assertIn("## Citas no verificadas", text)
+        self.assertIn("ghost.txt", text)
+        self.assertIn("AGENTS.md:99", text)
+        self.assertIn("⚠", text)
 
     def test_stale_state_cleanup(self):
         repo = self.feature()

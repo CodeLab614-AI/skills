@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess  # noqa: F401  (kept out: all Git goes through gitcmd)
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -20,11 +21,25 @@ KIND_ORDER = ["lockfile", "generated", "whitespace", "move", "repeated_replaceme
 __all__ = ["LABELS", "render", "write_report", "resolve_labels"]
 
 
+def _one(value) -> str:
+    """Single-line text: every line break collapses to one space."""
+    return " ".join(str(value).splitlines())
+
+
+def _code(value) -> str:
+    """Inline code span whose fence is longer than any backtick run inside."""
+    text = _one(value)
+    longest = max([len(m) for m in re.findall(r"`+", text)] or [0])
+    fence = "`" * (longest + 1)
+    pad = " " if text.startswith("`") or text.endswith("`") else ""
+    return fence + pad + text + pad + fence
+
+
 def resolve_labels(lang: str, override: Optional[Dict] = None) -> Dict[str, str]:
     labels = dict(LABELS["en"])
     labels.update(LABELS.get(lang, {}))
     labels.update(override or {})
-    return labels
+    return {k: _one(v) for k, v in labels.items()}
 
 
 def _read(repo: Path, rel: str) -> Dict:
@@ -58,14 +73,14 @@ def _rule_ref(rule: Dict) -> str:
 
 
 def _mark(ok: bool, text: str, labels: Dict) -> str:
+    text = _code(text)
     return text if ok else "%s ⚠ %s" % (text, labels["unverified_citation"])
 
 
-def _summary(facts: Dict, labels: Dict) -> List[str]:
+def _summary(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
     t = facts.get("totals", {})
-    touched = set()
-    for item in list(facts.get("hunks", [])) + list(facts.get("files", [])):
-        touched.update(item.get("rules") or [])
+    touched = [i for i in verified.get("rules") or []
+               if i.get("status") in ("complies", "seems_not")]
     return [
         "- %d %s (+%d / -%d)" % (t.get("files", 0), labels["files"],
                                  t.get("additions", 0), t.get("deletions", 0)),
@@ -94,7 +109,7 @@ def _rules(verified: Dict, labels: Dict) -> List[str]:
                                  for c in changes)
                 line += " → " + refs
             if item.get("note"):
-                line += ": " + str(item["note"])
+                line += ": " + _one(item["note"])
             out.append(line)
         out.append("")
     return out
@@ -112,7 +127,7 @@ def _group_files(group: Dict, facts: Dict, hunks: Dict[str, Dict]) -> List[str]:
     for path in group.get("files") or []:
         f = by_path.get(path, {})
         per.setdefault(path, [f.get("additions", 0), f.get("deletions", 0)])
-    return ["- `%s` (+%d / -%d)" % (p, a, d) for p, (a, d) in sorted(per.items())]
+    return ["- %s (+%d / -%d)" % (_code(p), a, d) for p, (a, d) in sorted(per.items())]
 
 
 def _groups(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
@@ -121,12 +136,12 @@ def _groups(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
     out: List[str] = []
     for g in groups:
         name = labels["ungrouped"] if g.get("id") == UNGROUPED_ID or not g.get("name") \
-            else g["name"]
+            else _one(g["name"])
         out += ["### " + name, ""]
         if g.get("what"):
-            out += [str(g["what"]), ""]
+            out += [_one(g["what"]), ""]
         out += _group_files(g, facts, hunks)
-        rules = sorted({r for hid in g.get("hunk_ids") or []
+        rules = sorted({_code(r) for hid in g.get("hunk_ids") or []
                         for r in (hunks.get(hid) or {}).get("rules", [])})
         if rules:
             out.append("- %s: %s" % (labels["rules_label"], ", ".join(rules)))
@@ -155,12 +170,13 @@ def _mechanical(facts: Dict, labels: Dict) -> List[str]:
         out += ["### " + labels.get("kind_" + kind, kind), ""]
         if kind == "repeated_replacement":
             for rep in reps:
-                out.append("- `%s` → `%s` (%d %s)" % (
-                    rep["old"], rep["new"], len(rep.get("files") or []), labels["in_files"]))
+                out.append("- %s → %s (%d %s)" % (
+                    _code(rep["old"]), _code(rep["new"]), len(rep.get("files") or []),
+                    labels["in_files"]))
                 for exc in rep.get("exceptions") or []:
-                    out.append("  - %s: `%s`" % (labels["exceptions"], exc["file"]))
+                    out.append("  - %s: %s" % (labels["exceptions"], _code(exc["file"])))
         else:
-            out += ["- `%s`" % p for p in sorted(kinds[kind])]
+            out += ["- " + _code(p) for p in sorted(kinds[kind])]
         out.append("")
     return out
 
@@ -175,7 +191,8 @@ def _unverified(verified: Dict, labels: Dict) -> List[str]:
             ref = _cite_line(c)
         else:
             ref = _cite_loc(c)
-        out.append("- ⚠ %s: %s (%s)" % (labels["unverified_citation"], ref, item.get("kind")))
+        out.append("- ⚠ %s: %s (%s)" % (labels["unverified_citation"], _code(ref),
+                                         _one(item.get("kind"))))
     return out
 
 
@@ -183,17 +200,20 @@ def _provenance(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
     rng = facts.get("range") or {}
     spec = rng.get("spec") or {}
     ex = facts.get("excluded") or {}
-    out = ["- %s: %s" % (labels["from"], spec.get("from") or spec.get("commit") or rng.get("old")),
-           "- %s: %s" % (labels["to"], rng.get("new") or labels["working_tree"]),
-           "- merge-base: %s" % rng.get("old"),
-           "- %s: %s" % (labels["excluded_merges"], ", ".join(s[:10] for s in ex.get("merges") or [])
+    out = ["- %s: %s" % (labels["from"], _code(spec.get("from") or spec.get("commit")
+                                              or rng.get("old"))),
+           "- %s: %s" % (labels["to"], _code(rng["new"]) if rng.get("new")
+                         else labels["working_tree"]),
+           "- merge-base: %s" % _code(rng.get("old")),
+           "- %s: %s" % (labels["excluded_merges"], ", ".join(_code(s[:10]) for s in ex.get("merges") or [])
                          or labels["none"]),
-           "- %s: %s" % (labels["excluded_authors"], ", ".join(ex.get("authors") or [])
+           "- %s: %s" % (labels["excluded_authors"], ", ".join(_code(a) for a in ex.get("authors") or [])
                          or labels["none"])]
     commits = facts.get("commits") or []
     if commits:
         out.append("- %s:" % labels["commits"])
-        out += ["  - %s %s" % (c["sha"][:10], c.get("subject", "")) for c in commits]
+        out += ["  - %s %s" % (_code(c["sha"][:10]), _one(c.get("subject", "")))
+                for c in commits]
         if facts.get("commits_truncated"):
             out.append("  - " + labels["commits_truncated"])
     if verified.get("interpreted_in") == "same_conversation":
@@ -208,7 +228,7 @@ def render(facts: Dict, verified: Dict, labels: Dict) -> str:
     def section(head: str, body: List[str]) -> None:
         parts.extend(["## " + head, ""] + body + ([""] if body and body[-1] != "" else []))
 
-    section(labels["h_summary"], _summary(facts, labels))
+    section(labels["h_summary"], _summary(facts, verified, labels))
     section(labels["h_rules"], _rules(verified, labels))
     section(labels["h_groups"], _groups(facts, verified, labels))
     mech = _mechanical(facts, labels)
