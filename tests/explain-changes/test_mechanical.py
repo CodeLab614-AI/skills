@@ -59,11 +59,64 @@ class MechanicalTests(RepoTestCase):
         self.assertEqual(_file(facts, "plain.py")["class"], "logic")
 
     def test_whitespace_only(self):
+        repo = self._base({"a.ts": "if (x) {\n    y();\n}\n"})
+        repo.write("a.ts", "if (x) {\n        y();\n}\n")
+        repo.commit("indent")
+        f = _file(_facts(repo, "--from", "main"), "a.ts")
+        self.assertEqual((f["class"], f["mechanical_kind"]), ("mechanical", "whitespace"))
+
+    def test_python_reindent_is_logic(self):
         repo = self._base({"a.py": "if x:\n    y()\n"})
         repo.write("a.py", "if x:\n        y()\n")
         repo.commit("indent")
+        self.assertEqual(_file(_facts(repo, "--from", "main"), "a.py")["class"], "logic")
+
+    def test_python_intraline_spacing_is_mechanical(self):
+        repo = self._base({"a.py": "x=1\n"})
+        repo.write("a.py", "x = 1\n")
+        repo.commit("space")
         f = _file(_facts(repo, "--from", "main"), "a.py")
         self.assertEqual((f["class"], f["mechanical_kind"]), ("mechanical", "whitespace"))
+
+    def test_line_join_is_logic(self):
+        repo = self._base({"a.ts": "// disabled\nrun()\n"})
+        repo.write("a.ts", "// disabledrun()\n")
+        repo.commit("join")
+        self.assertEqual(_file(_facts(repo, "--from", "main"), "a.ts")["class"], "logic")
+
+    def test_blank_line_change_is_mechanical(self):
+        repo = self._base({"a.ts": "a()\nb()\n"})
+        repo.write("a.ts", "a()\n\nb()\n")
+        repo.commit("blank")
+        self.assertEqual(_file(_facts(repo, "--from", "main"), "a.ts")["class"], "mechanical")
+
+    def test_build_out_generated_dirs_are_logic_dist_is_generated(self):
+        repo = self._base({"src/build/compile.ts": "a\n", "lib/generated/handwritten.py": "a\n",
+                           "packages/ui/dist/index.js": "a\n"})
+        for p in ("src/build/compile.ts", "lib/generated/handwritten.py", "packages/ui/dist/index.js"):
+            repo.write(p, "b\n")
+        repo.commit("edit")
+        facts = _facts(repo, "--from", "main")
+        self.assertEqual(_file(facts, "src/build/compile.ts")["class"], "logic")
+        self.assertEqual(_file(facts, "lib/generated/handwritten.py")["class"], "logic")
+        self.assertEqual(_file(facts, "packages/ui/dist/index.js")["mechanical_kind"], "generated")
+
+    def test_move_with_mode_change_is_logic(self):
+        repo = self._base({"old.sh": "a\nb\nc\nd\n"})
+        repo.git("mv", "old.sh", "new.sh")
+        (repo.path / "new.sh").chmod(0o755)
+        repo.commit("move+chmod")
+        f = _file(_facts(repo, "--from", "main"), "new.sh")
+        self.assertEqual(f["status"], "renamed")
+        self.assertEqual(f["class"], "logic")
+
+    def test_eol_only_without_hunks_stays_logic(self):
+        repo = self._base({"a.ts": "a\nb\n"})
+        repo.write("a.ts", "a\r\nb\r\n")
+        repo.commit("crlf")
+        f = _file(_facts(repo, "--from", "main"), "a.ts")
+        self.assertTrue(f["eol_only"])
+        self.assertEqual(f["class"], "logic")
 
     def test_whitespace_plus_char_is_logic(self):
         repo = self._base({"a.py": "if x:\n    y()\n"})

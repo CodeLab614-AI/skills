@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, List, Optional, Set
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from .gitcmd import run_git
 from .model import FileChange, Hunk
@@ -13,9 +13,7 @@ LOCKFILES = frozenset([
     "uv.lock", "composer.lock", "Gemfile.lock", "go.sum", "packages.lock.json",
     "pubspec.lock", "mix.lock", "flake.lock", "Podfile.lock", "gradle.lockfile",
 ])
-GENERATED_DIRS = frozenset([
-    "dist", "build", "out", ".next", "coverage", "__generated__", "generated",
-])
+GENERATED_DIRS = frozenset(["dist", ".next", "coverage", "__generated__"])
 GENERATED_SUFFIXES = (
     ".min.js", ".min.css", ".pb.go", "_pb2.py", ".g.dart", ".freezed.dart",
 )
@@ -27,15 +25,40 @@ def is_lockfile(path: str) -> bool:
     return PurePosixPath(path).name in LOCKFILES
 
 
+INDENT_SENSITIVE_SUFFIXES = (
+    ".py", ".pyi", ".yml", ".yaml", ".mk", ".coffee", ".pug", ".haml", ".sass", ".styl",
+)
+INDENT_SENSITIVE_NAMES = frozenset(["Makefile", "GNUmakefile"])
+
+
+def is_indent_sensitive(path: str) -> bool:
+    name = PurePosixPath(path).name
+    return name in INDENT_SENSITIVE_NAMES or name.endswith(INDENT_SENSITIVE_SUFFIXES)
+
+
+def _squashed(lines: Iterable[str]) -> List[Tuple[str, str]]:
+    """(leading indentation, text without whitespace) per line; blank lines dropped."""
+    out = []
+    for line in lines:
+        text = "".join(line.split())
+        if text:
+            out.append((line[:len(line) - len(line.lstrip())], text))
+    return out
+
+
 def is_whitespace_only(hunk: Hunk) -> bool:
-    """True when the - and + lines are equal once all whitespace is removed."""
+    """Per-line equal once whitespace is removed (like ``-w``); blank lines ignored.
+
+    In indentation-significant files a changed leading indentation is logic.
+    """
     if not hunk.removed and not hunk.added:
         return False
-
-    def squash(lines: Iterable[str]) -> str:
-        return "".join("".join(line.split()) for line in lines)
-
-    return squash(hunk.removed) == squash(hunk.added)
+    old, new = _squashed(hunk.removed), _squashed(hunk.added)
+    if [t for _, t in old] != [t for _, t in new]:
+        return False
+    if is_indent_sensitive(hunk.file) and any(o[0] != n[0] for o, n in zip(old, new)):
+        return False
+    return True
 
 
 def generated_attr_paths(repo: Path, paths: List[str]) -> Set[str]:
@@ -116,9 +139,12 @@ def classify(repo: Path, files: List[FileChange], hunks: List[Hunk]) -> None:
         if fc.binary or fc.too_large:
             continue
         if not fc.hunks:
-            if fc.status == "renamed" and fc.similarity == 100:
+            if (fc.status == "renamed" and fc.similarity == 100
+                    and fc.old_mode == fc.new_mode):
                 _set(fc, "move")
             continue
+        if fc.eol_only:
+            continue  # line-ending churn: in doubt, logic
         kinds = []
         for h in fc.hunks:
             if is_whitespace_only(h):
