@@ -4,11 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from . import rules, state
 from .gitcmd import git_text, run_git
 from .model import BlockedError
 
 FALLBACK_BASES = ("main", "master", "develop")
 FETCH_TIMEOUT = 20
+MAX_PICK = 30
+SQUASH_SCAN = 300
 
 
 def _ok(repo: Path, args: List[str]) -> bool:
@@ -86,6 +89,207 @@ def find_merge_base(repo: Path, base: str, shallow: bool) -> Optional[str]:
     return mb
 
 
+def _lines(repo: Path, args: List[str]) -> List[str]:
+    res = run_git(repo, args, check=False)
+    if res.code != 0:
+        return []
+    return [l for l in res.out.decode("utf-8", errors="replace").split("\n") if l]
+
+
+def _commit_rows(repo: Path, args: List[str]) -> List[List[str]]:
+    return [l.split("\x1f") for l in _lines(repo, ["log", "--format=%H%x1f%s%x1f%ae", *args])]
+
+
+def own_commits(repo: Path, mb: Optional[str]) -> List[Dict]:
+    if mb is None:
+        return []
+    return [{"sha": r[0], "subject": r[1], "email": r[2]}
+            for r in _commit_rows(repo, ["--no-merges", mb + "..HEAD"])]
+
+
+def foreign_merges(repo: Path, mb: Optional[str], base: str) -> List[Dict]:
+    """Merges in mb..HEAD whose later parents are not reachable from the base."""
+    if mb is None:
+        return []
+    found = []
+    for line in _lines(repo, ["log", "--merges", "--format=%H%x1f%P%x1f%s", mb + "..HEAD"]):
+        sha, parents, subject = line.split("\x1f")
+        plist = parents.split()
+        foreign = [p for p in plist[1:]
+                   if not _ok(repo, ["merge-base", "--is-ancestor", p, base])]
+        if not foreign:
+            continue
+        hint = _text_or_none(repo, ["name-rev", "--name-only", "--no-undefined", foreign[0]])
+        files = len(_lines(repo, ["diff", "--name-only", sha + "^1", sha]))
+        found.append({"sha": sha, "branch_hint": _clean_hint(hint, subject), "files": files})
+    return found
+
+
+def _clean_hint(hint: Optional[str], subject: str) -> str:
+    if hint:
+        return hint.split("~")[0].split("^")[0]
+    return subject
+
+
+def other_authors(commits: List[Dict], user_email: Optional[str]) -> List[Dict]:
+    if not user_email:
+        return []
+    me = user_email.lower()
+    return [{"sha": c["sha"], "email": c["email"]} for c in commits
+            if c["email"].lower() != me]
+
+
+def read_status(repo: Path) -> Tuple[Dict[str, int], List[str]]:
+    """Count staged, unstaged and untracked paths (ignored files never show)."""
+    res = run_git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+    entries = res.out.decode("utf-8", errors="replace").split("\0")
+    counts = {"staged": 0, "unstaged": 0, "untracked": 0}
+    paths: List[str] = []
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        x, y, path = entry[0], entry[1], entry[3:]
+        if x in "RC":
+            i += 1  # skip the original path of a rename or copy
+        if x == "?":
+            counts["untracked"] += 1
+        else:
+            if x not in " ?!":
+                counts["staged"] += 1
+            if y not in " ?!":
+                counts["unstaged"] += 1
+        paths.append(path)
+    return counts, paths
+
+
+def _patch_ids(repo: Path, patch: bytes) -> List[Tuple[str, str]]:
+    res = run_git(repo, ["patch-id", "--stable"], check=False, stdin=patch)
+    pairs = []
+    for line in res.out.decode("utf-8", errors="replace").splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            pairs.append((parts[0], parts[1]))
+    return pairs
+
+
+def find_merged(repo: Path, mb: Optional[str], base: str) -> Optional[Dict]:
+    """Detect whether HEAD's work already landed in the base: merge, squash or tree."""
+    if mb is None:
+        return None
+    if _ok(repo, ["merge-base", "--is-ancestor", "HEAD", base]):
+        rows = _lines(repo, ["rev-list", "--merges", "--ancestry-path", "--reverse",
+                             "HEAD.." + base])
+        return {"how": "merge", "commit": rows[0]} if rows else None
+    flags = ["--no-ext-diff", "--no-textconv"]
+    diff = run_git(repo, ["diff", *flags, mb, "HEAD"], check=False).out
+    if not diff.strip():
+        return None
+    mine = _patch_ids(repo, diff)
+    if mine:
+        log = run_git(repo, ["log", "-p", "--no-merges", *flags, "-n", str(SQUASH_SCAN),
+                             mb + ".." + base], check=False).out
+        theirs = {pid: sha for pid, sha in _patch_ids(repo, log)}
+        if mine[0][0] in theirs:
+            return {"how": "squash", "commit": theirs[mine[0][0]]}
+    files = _lines(repo, ["diff", "--name-only", mb, "HEAD"])
+    if files and _ok(repo, ["diff", "--quiet", "HEAD", base, "--", *files]):
+        last = _text_or_none(repo, ["log", "-1", "--format=%H", base, "--", *files])
+        if last:
+            return {"how": "tree", "commit": last}
+    return None
+
+
+def count_unpushed(repo: Path) -> int:
+    if _ok(repo, ["rev-parse", "--verify", "-q", "@{upstream}"]):
+        out = _text_or_none(repo, ["rev-list", "--count", "@{upstream}..HEAD"])
+    elif _lines(repo, ["remote"]):
+        out = _text_or_none(repo, ["rev-list", "--count", "HEAD", "--not", "--remotes"])
+    else:
+        return 0
+    return int(out) if out and out.isdigit() else 0
+
+
+def diff_size(repo: Path, mb: Optional[str], extra_paths: List[str]) -> Tuple[Dict, List[str]]:
+    paths = set(extra_paths)
+    lines = 0
+    for row in _lines(repo, ["diff", "--numstat", "--no-ext-diff", "--no-textconv",
+                             mb or "HEAD"]):
+        add, dele, name = (row.split("\t", 2) + ["", ""])[:3]
+        paths.add(name)
+        lines += (int(add) if add.isdigit() else 0) + (int(dele) if dele.isdigit() else 0)
+    return {"files": len(paths), "lines": lines}, sorted(paths)
+
+
+def _opt(oid: str, recommended: bool, facts_args: List[str], params: Optional[Dict] = None) -> Dict:
+    return {"id": oid, "recommended": recommended, "facts_args": facts_args,
+            "params": params or {}}
+
+
+def scope_options(repo: Path, info: Dict) -> List[Dict]:
+    """Options for the scope question. from_commit and other_commit are pickers:
+    their facts_args are a prefix and the caller appends the chosen sha."""
+    mb, pending = info["merge_base"], sum(info["uncommitted"].values()) > 0
+    extra = ["--include-uncommitted"] if pending else []
+    commits = [{"sha": c["sha"], "subject": c["subject"]}
+               for c in info["own_commits"][:MAX_PICK]]
+    if not commits:
+        commits = [{"sha": r[0], "subject": r[1]}
+                   for r in _commit_rows(repo, ["-n", str(MAX_PICK), "HEAD"])]
+    review = info["last_review"]
+    fresh = review is not None and (review.get("head") != info["head"] or pending)
+    options: List[Dict] = []
+    if info["merged"]:
+        options.append(_opt("merge_commit", True, ["--commit", info["merged"]["commit"]]))
+    if fresh and mb:
+        options.append(_opt("only_new", True, ["--from", mb, "--only-new", *extra]))
+    can_whole = mb is not None and (not info["on_base"] or info["unpushed"] > 0)
+    if can_whole:
+        options.append(_opt("whole_branch", not options, ["--from", mb, *extra]))
+    if info["merged"]:
+        options.append(_opt("other_commit", False, ["--commit"], {"commits": commits}))
+    else:
+        options.append(_opt("from_commit", not options, ["--from"], {"commits": commits}))
+    if not info["on_base"] or pending:
+        options.append(_opt("uncommitted_only", False, ["--from", "HEAD", "--include-uncommitted"]))
+    if len(options) == 1:
+        options[0]["recommended"] = True
+    elif not any(o["recommended"] for o in options):
+        options[0]["recommended"] = True
+    return options
+
+
+def build_questions(repo: Path, info: Dict) -> Tuple[List[Dict], List[Dict], str]:
+    """Return (questions, auto_answered notices, chosen scope option id)."""
+    questions: List[Dict] = []
+    notices: List[Dict] = []
+    scope = scope_options(repo, info)
+    chosen = next(o["id"] for o in scope if o["recommended"])
+    candidates = [{"id": "scope", "options": scope}]
+    merges = info["foreign_merges"]
+    if merges:
+        candidates.append({"id": "foreign_merges", "options": [
+            _opt("exclude", True, [a for m in merges for a in ("--exclude-merge", m["sha"])]),
+            _opt("include", False, [a for m in merges for a in ("--include-merge", m["sha"])]),
+        ]})
+    emails = sorted({c["email"] for c in info["other_author_commits"]}, key=str.lower)
+    if emails:
+        candidates.append({"id": "other_authors", "options": [
+            _opt("exclude", False, [a for e in emails for a in ("--exclude-author", e)],
+                 {"emails": emails}),
+            _opt("include", True, []),
+        ]})
+    for q in candidates:
+        if len(q["options"]) == 1:
+            notices.append({"code": "auto_answered",
+                            "params": {"question": q["id"], "option": q["options"][0]["id"]}})
+        else:
+            questions.append(q)
+    return questions, notices, chosen
+
+
 def detect(repo: Path, fetch: bool = True) -> dict:
     check_blocks(repo)
     branch = current_branch(repo)
@@ -103,7 +307,7 @@ def detect(repo: Path, fetch: bool = True) -> dict:
     merge_base = find_merge_base(repo, base, shallow)
     if merge_base is None:
         notices.append({"code": "no_merge_base", "params": {"base": base}})
-    return {
+    result = {
         "ok": True,
         "branch": branch,
         "detached": branch is None,
@@ -115,3 +319,41 @@ def detect(repo: Path, fetch: bool = True) -> dict:
         "merge_base": merge_base,
         "notices": notices,
     }
+    result.update(_describe_changes(repo, result))
+    return result
+
+
+def _describe_changes(repo: Path, info: Dict) -> Dict:
+    mb, base, branch = info["merge_base"], info["base"], info["branch"]
+    notices = info["notices"]
+    commits = own_commits(repo, mb)
+    user_email = _text_or_none(repo, ["config", "user.email"])
+    if not user_email:
+        notices.append({"code": "author_check_skipped", "params": {}})
+    counts, status_paths = read_status(repo)
+    base_short = base[len("origin/"):] if base.startswith("origin/") else base
+    review = state.load_state(repo, branch) if branch else None
+    size, changed = diff_size(repo, mb, status_paths)
+    out = {
+        "own_commits": commits,
+        "foreign_merges": foreign_merges(repo, mb, base),
+        "other_author_commits": other_authors(commits, user_email),
+        "uncommitted": counts,
+        "merged": None,
+        "on_base": branch == base_short,
+        "unpushed": count_unpushed(repo),
+        "last_review": None if review is None else {
+            "head": review.get("head"), "reviewed_at": review.get("reviewed_at"),
+            "hunk_count": len(review.get("hunks", []))},
+        "rule_files": rules.find_rule_files(repo, changed),
+        "diff_size": size,
+    }
+    if not out["on_base"]:
+        out["merged"] = find_merged(repo, mb, base)
+    merged_view = dict(info, **out)
+    questions, auto, chosen = build_questions(repo, merged_view)
+    notices.extend(auto)
+    out["questions"] = questions
+    out["summary"] = {"scope_option": chosen, "base": base,
+                      "rule_count": len(out["rule_files"])}
+    return out
