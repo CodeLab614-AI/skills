@@ -15,11 +15,27 @@ UNGROUPED_ID = "ungrouped"
 def load_facts(repo: Path) -> Dict:
     path = Path(repo) / ".explain-changes" / "run/facts.json"
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        facts = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
+        facts = None
+    if not isinstance(facts, dict):
         raise BlockedError(
             "bad_input", "No usable .explain-changes/run/facts.json; run the facts "
             "subcommand first.")
+    return facts
+
+
+def _bad(where: str, what: str):
+    raise BlockedError("bad_input", "Invalid interpretation at %s: %s." % (where, what))
+
+
+def _dict_list(value, where: str) -> List[Dict]:
+    if not isinstance(value, list):
+        _bad(where, "expected a list")
+    for i, item in enumerate(value):
+        if not isinstance(item, dict):
+            _bad("%s[%d]" % (where, i), "expected an object")
+    return value
 
 
 def parse_interpretation(text: str) -> Dict:
@@ -27,12 +43,21 @@ def parse_interpretation(text: str) -> Dict:
         interp = json.loads(text)
     except ValueError:
         raise BlockedError("bad_input", "The interpretation is not valid JSON.")
-    if not isinstance(interp, dict) or not isinstance(interp.get("groups"), list) \
-            or not all(isinstance(g, dict) for g in interp["groups"]):
-        raise BlockedError("bad_input", "The interpretation must be an object with a "
-                           "'groups' list.")
-    if not isinstance(interp.get("rules", []), list):
-        raise BlockedError("bad_input", "'rules' must be a list.")
+    if not isinstance(interp, dict):
+        _bad("root", "expected an object")
+    for gi, group in enumerate(_dict_list(interp.get("groups"), "groups")):
+        where = "groups[%d]" % gi
+        gid = group.get("id")
+        if not isinstance(gid, str) or not gid:
+            _bad(where + ".id", "expected a non-empty string")
+        if gid == UNGROUPED_ID:
+            _bad(where + ".id", "'ungrouped' is a reserved id")
+        _dict_list(group.get("locations", []), where + ".locations")
+    for ri, item in enumerate(_dict_list(interp.get("rules", []), "rules")):
+        where = "rules[%d]" % ri
+        if not isinstance(item.get("rule"), dict):
+            _bad(where + ".rule", "expected an object")
+        _dict_list(item.get("changes", []), where + ".changes")
     return interp
 
 
@@ -56,20 +81,20 @@ class _Index:
         self.rule_lines = {r["path"]: r.get("line_count", 0)
                            for r in facts.get("rule_files", [])}
         # Alias (new or old path) -> canonical new path.
-        self.alias: Dict[str, str] = {}
-        self.hunkless: Dict[str, str] = {}  # alias -> path, logic files without hunks
+        self.alias: Dict[str, Dict[str, str]] = {"new": {}, "old": {}}
+        self.hunkless: Dict[tuple, str] = {}  # (side, path) -> path, logic files without hunks
         for f in facts.get("files", []):
-            self.alias[f["path"]] = f["path"]
-            if f.get("old_path"):
-                self.alias.setdefault(f["old_path"], f["path"])
+            self.alias["new"][f["path"]] = f["path"]
+            self.alias["old"].setdefault(f.get("old_path") or f["path"], f["path"])
             if f.get("class") == "logic" and not f.get("hunks"):
-                self.hunkless[f["path"]] = f["path"]
-                if f.get("old_path"):
-                    self.hunkless.setdefault(f["old_path"], f["path"])
+                self.hunkless.setdefault(("new", f["path"]), f["path"])
+                self.hunkless.setdefault(("old", f.get("old_path") or f["path"]), f["path"])
 
     def match(self, file, start: int, end: int, side: str):
         """Return (valid, hunk ids hit, hunkless path or None)."""
-        canon = self.alias.get(file, file)
+        canon = self.alias[side].get(file)
+        if canon is None:
+            return False, [], None
         hits = []
         for h in self.hunks_by_file.get(canon, []):
             lo, hi = _hunk_range(h, side)
@@ -77,8 +102,8 @@ class _Index:
                 hits.append(h)
         if hits:
             return True, hits, None
-        if file in self.hunkless:
-            return True, [], self.hunkless[file]
+        if (side, file) in self.hunkless:
+            return True, [], self.hunkless[(side, file)]
         return False, [], None
 
 
