@@ -15,6 +15,8 @@ from explain_changes_lib import facts as facts_mod  # noqa: E402
 from explain_changes_lib import gitcmd  # noqa: E402
 from explain_changes_lib.ranges import RangeSpec  # noqa: E402
 from explain_changes_lib.model import BlockedError  # noqa: E402
+from explain_changes_lib.targets import load_targets  # noqa: E402
+from explain_changes_lib.bundle import bundle as bundle_mod  # noqa: E402
 
 
 def _emit(payload: dict, code: int = 0) -> int:
@@ -80,13 +82,7 @@ def _range_spec(args) -> RangeSpec:
 def _read_targets(args):
     if not args.targets_stdin:
         return None
-    try:
-        data = json.loads(sys.stdin.read() or "null")
-    except ValueError as exc:
-        raise BlockedError("bad_input", "Targets are not valid JSON: %s" % exc)
-    if data is not None and not isinstance(data, list):
-        raise BlockedError("bad_input", "Targets must be a JSON list.")
-    return data
+    return load_targets(sys.stdin.read())
 
 
 def main(argv=None) -> int:
@@ -98,6 +94,8 @@ def main(argv=None) -> int:
         if args.command == "facts":
             return _emit(facts_mod.summary(facts_mod.collect_facts(
                 repo, _range_spec(args), _read_targets(args), args.only_new)))
+        if args.command == "bundle":
+            return _emit(bundle_mod(repo, args.batch))
         return _not_implemented(args.command)
     except BlockedError as exc:
         return _emit({"ok": False, "error": {"code": exc.code, "message": exc.message}}, 2)

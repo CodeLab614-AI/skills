@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from . import mechanical, ranges, replacements, rules
+from . import batches, mechanical, ranges, replacements, rules, targets
 from .diffparse import diff_files, untracked_files
-from .model import FileChange, Hunk
+from .model import FileChange, Hunk, Target
 from .ranges import RangeSpec
 from .workspace import cleanup_previous, safe_write
 
@@ -18,7 +18,7 @@ FACTS_PATH = ".explain-changes/" + FACTS_REL
 class FactsContext:
     """Mutable state shared by the pipeline steps."""
 
-    def __init__(self, repo: Path, spec: RangeSpec, targets: Optional[List[Dict]],
+    def __init__(self, repo: Path, spec: RangeSpec, targets: Optional[List[Target]],
                  only_new: bool, files: List[FileChange], hunks: List[Hunk]) -> None:
         self.repo, self.spec, self.targets, self.only_new = repo, spec, targets, only_new
         self.files, self.hunks = files, hunks
@@ -45,7 +45,10 @@ def repeated_replacements(ctx: FactsContext) -> None:
 
 
 def targets_and_batches(ctx: FactsContext) -> None:
-    """Task 9: rule targets and batches. No-op until then."""
+    """Lift hunks matched by rule targets to logic, then split logic into batches."""
+    if ctx.targets:
+        targets.apply_targets(ctx.files, ctx.hunks, ctx.targets)
+    ctx.batches = batches.make_batches(ctx.files, ctx.hunks)
 
 
 def review_state(ctx: FactsContext) -> None:
@@ -84,7 +87,7 @@ def _apply_subtraction(ctx: FactsContext, foreign: ranges.ForeignLines) -> List[
     return dropped
 
 
-def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Dict]] = None,
+def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Target]] = None,
                   only_new: bool = False) -> Dict:
     repo = Path(repo)
     spec = ranges.normalize_spec(repo, spec)
@@ -115,6 +118,7 @@ def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Dict]] = N
                      "dropped_hunks": dropped},
         "rule_files": rules.find_rule_files(repo, [f.path for f in ctx.files]),
         "replacements": ctx.replacements,
+        "targets": [t.to_json() for t in (ctx.targets or [])],
         "batches": ctx.batches,
         "totals": compute_totals(ctx.files, ctx.hunks),
         "notices": ctx.notices,

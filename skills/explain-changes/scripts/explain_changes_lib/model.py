@@ -101,3 +101,22 @@ class FileChange:
             "hunks": [h.id for h in self.hunks],
             "class": self.klass, "mechanical_kind": self.mechanical_kind,
         }
+
+
+@dataclass
+class Target:
+    """A rule target supplied by the agent: where a rule applies."""
+    id: str
+    rule_file: str
+    rule_line: int
+    paths: List[str] = field(default_factory=list)
+    change_kinds: List[str] = field(default_factory=list)
+    line_pattern: Optional[str] = None
+
+    def to_json(self) -> Dict:
+        return {
+            "id": self.id,
+            "rule": {"file": self.rule_file, "line": self.rule_line},
+            "paths": list(self.paths), "change_kinds": list(self.change_kinds),
+            "line_pattern": self.line_pattern,
+        }
