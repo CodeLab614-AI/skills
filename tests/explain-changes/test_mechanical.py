@@ -110,13 +110,16 @@ class MechanicalTests(RepoTestCase):
         self.assertEqual(f["status"], "renamed")
         self.assertEqual(f["class"], "logic")
 
-    def test_eol_only_without_hunks_stays_logic(self):
-        repo = self._base({"a.ts": "a\nb\n"})
+    def test_eol_only_is_mechanical_whitespace(self):
+        repo = self._base({"a.ts": "a\nb\n", "b.py": "if x:\n    y()\n"})
         repo.write("a.ts", "a\r\nb\r\n")
+        repo.write("b.py", "if x:\r\n    y()\r\n")
         repo.commit("crlf")
-        f = _file(_facts(repo, "--from", "main"), "a.ts")
-        self.assertTrue(f["eol_only"])
-        self.assertEqual(f["class"], "logic")
+        facts = _facts(repo, "--from", "main")
+        for p in ("a.ts", "b.py"):
+            f = _file(facts, p)
+            self.assertTrue(f["eol_only"], p)
+            self.assertEqual((f["class"], f["mechanical_kind"]), ("mechanical", "whitespace"), p)
 
     def test_whitespace_plus_char_is_logic(self):
         repo = self._base({"a.py": "if x:\n    y()\n"})

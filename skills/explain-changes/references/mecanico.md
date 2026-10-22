@@ -17,7 +17,7 @@
 
 The `-` and `+` lines of the hunk are equal line by line once all whitespace is removed (equivalent to `-w`); lines that are only whitespace are ignored. Joining or splitting lines is logic. A reindentation that also changes one character is logic.
 
-In indentation-significant files (`.py`, `.pyi`, `.yml`, `.yaml`, `.mk`, `.coffee`, `.pug`, `.haml`, `.sass`, `.styl`, `Makefile`, `GNUmakefile`) a hunk where any line's leading indentation changed is logic. Spacing changes inside a line (`x=1` to `x = 1`) stay mechanical. Files whose only change is line endings (`eol_only`) stay logic.
+In indentation-significant files (`.py`, `.pyi`, `.yml`, `.yaml`, `.mk`, `.coffee`, `.pug`, `.haml`, `.sass`, `.styl`, `Makefile`, `GNUmakefile`) a hunk where any line's leading indentation changed is logic. Spacing changes inside a line (`x=1` to `x = 1`) stay mechanical. Files whose only change is line endings (`eol_only`) are mechanical whitespace too (a CRLF change does not alter leading indentation, so this holds for `.py` as well); the `eol_only` flag stays on the file.
 
 ## Moves (`mechanical_kind: move`)
 

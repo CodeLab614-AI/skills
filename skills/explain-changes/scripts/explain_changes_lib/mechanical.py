@@ -143,8 +143,6 @@ def classify(repo: Path, files: List[FileChange], hunks: List[Hunk]) -> None:
                     and fc.old_mode == fc.new_mode):
                 _set(fc, "move")
             continue
-        if fc.eol_only:
-            continue  # line-ending churn: in doubt, logic
         kinds = []
         for h in fc.hunks:
             if is_whitespace_only(h):
