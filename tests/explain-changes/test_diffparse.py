@@ -169,8 +169,52 @@ class DiffParseTests(RepoTestCase):
         self.assertTrue(files["many.txt"].too_large)
         self.assertEqual(files["many.txt"].hunks, [])
         repo.write("small.txt", "a\n")
-        self.assertFalse(by_path(diffparse.diff_files(repo.path, head, None)).get(
-            "small.txt", diffparse.FileChange("small.txt", "added")).too_large)
+        repo.write("small.txt", "a\nb\n")
+        repo.git("add", "small.txt")
+        files = by_path(diffparse.diff_files(repo.path, head, None))
+        self.assertIn("small.txt", files)
+        self.assertFalse(files["small.txt"].too_large)
+        self.assertTrue(files["small.txt"].hunks)
+
+    def test_blob_over_2mb_with_few_lines_is_too_large(self):
+        repo = self.make_repo()
+        repo.write("long.txt", "x\n")
+        base = repo.commit("base")
+        repo.write("long.txt", "y" * (2 * 1024 * 1024 + 10) + "\n")
+        head = repo.commit("c")
+        (fc,) = diffparse.diff_files(repo.path, base, head)
+        self.assertEqual(fc.additions, 1)
+        self.assertTrue(fc.too_large)
+        self.assertEqual(fc.hunks, [])
+
+    def test_untracked_over_2mb_not_read(self):
+        repo = self.make_repo()
+        repo.write("seed.txt", "s\n")
+        repo.commit("base")
+        repo.write("huge.txt", "z" * (2 * 1024 * 1024 + 1))
+        repo.write("hugebin.dat", b"\0" + b"z" * (2 * 1024 * 1024 + 1))
+        files = by_path(diffparse.untracked_files(repo.path))
+        self.assertTrue(files["huge.txt"].too_large)
+        self.assertEqual(files["huge.txt"].hunks, [])
+        self.assertFalse(files["huge.txt"].binary)
+        self.assertTrue(files["hugebin.dat"].too_large)
+        self.assertTrue(files["hugebin.dat"].binary)
+
+    def test_duplicate_changes_get_unique_ids(self):
+        repo = self.make_repo()
+        body = "foo\nkeep1\nkeep2\nfoo\nkeep3\nkeep4\nfoo\n"
+        repo.write("d.txt", body)
+        base = repo.commit("base")
+        repo.write("d.txt", body.replace("foo", "bar"))
+        head = repo.commit("c")
+        (fc,) = diffparse.diff_files(repo.path, base, head)
+        self.assertEqual(len(fc.hunks), 3)
+        ids = [h.id for h in fc.hunks]
+        self.assertEqual(len(set(ids)), 3)
+        self.assertEqual(len({h.fingerprint for h in fc.hunks}), 1)
+        base_id = "h-" + fc.hunks[0].fingerprint[:12]
+        self.assertEqual(ids, [base_id, base_id + "-2", base_id + "-3"])
+        self.assertEqual(fc.to_json()["hunks"], ids)
 
     def test_fingerprint_stable(self):
         repo = self.make_repo()

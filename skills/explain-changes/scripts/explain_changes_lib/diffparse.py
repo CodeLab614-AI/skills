@@ -99,7 +99,19 @@ def _parse(path: str, patch: bytes) -> Tuple[List[Hunk], bool]:
             rem_old, rem_new = cur["old_lines"], cur["new_lines"]
     if cur is not None:
         hunks.append(_make(path, cur))
+    _unique_ids(hunks)
     return hunks, bad
+
+
+def _unique_ids(hunks: List[Hunk]) -> None:
+    """Fingerprints are content-only, so repeated changes in one file share
+    one; later occurrences get an ``-2``, ``-3`` suffix on the id."""
+    seen: Dict[str, int] = {}
+    for h in hunks:
+        n = seen.get(h.fingerprint, 0) + 1
+        seen[h.fingerprint] = n
+        if n > 1:
+            h.id_override = "h-%s-%d" % (h.fingerprint[:12], n)
 
 
 def _make(path: str, c: Dict) -> Hunk:
@@ -249,17 +261,28 @@ def untracked_files(repo: Path) -> List[FileChange]:
         if path.endswith("/") or path == WORKSPACE_DIR or path.startswith(WORKSPACE_DIR + "/"):
             continue
         full = repo / path
+        is_link = os.path.islink(full)
         try:
             st = os.lstat(full)
-            if os.path.islink(full):
+            if is_link:
                 data = os.fsencode(os.readlink(full))
+            elif st.st_size > MAX_BLOB_BYTES:
+                data = None  # too large: never read it into memory
             else:
-                data = full.read_bytes()
+                with open(full, "rb") as fh:
+                    data = fh.read()
         except OSError:
             continue
-        mode = "120000" if os.path.islink(full) else ("100755" if st.st_mode & 0o111 else "100644")
+        mode = "120000" if is_link else ("100755" if st.st_mode & 0o111 else "100644")
         fc = FileChange(path=path, status="untracked", new_mode=mode)
-        if b"\0" in data[:8000]:
+        if data is None:
+            fc.too_large = True
+            try:
+                with open(full, "rb") as fh:
+                    fc.binary = b"\0" in fh.read(8000)
+            except OSError:
+                pass
+        elif b"\0" in data[:8000]:
             fc.binary = True
         else:
             lines = _split_lines(data)

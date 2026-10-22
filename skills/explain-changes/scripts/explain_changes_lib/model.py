@@ -40,6 +40,8 @@ class Hunk:
     seen: bool = False
     changed_since_review: bool = False
     was_mechanical: Optional[str] = None
+    # Set by the parser when the same change repeats inside one file.
+    id_override: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.fingerprint:
@@ -47,7 +49,7 @@ class Hunk:
 
     @property
     def id(self) -> str:
-        return "h-" + self.fingerprint[:12]
+        return self.id_override or "h-" + self.fingerprint[:12]
 
     def to_json(self) -> Dict:
         return {
