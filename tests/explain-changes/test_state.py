@@ -176,6 +176,63 @@ class StateFlowTests(RepoTestCase):
         with self.assertRaises(ValueError):
             state.save_state(repo.path, "", {})
 
+    def _write_state(self, repo, data, branch="feature"):
+        path = repo.path / ".explain-changes" / "estado" / (state.state_key(branch) + ".json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(data if isinstance(data, str) else json.dumps(data), encoding="utf-8")
+
+    def test_malformed_state_is_no_state(self):
+        repo = self._setup()
+        good = self._review(repo)
+        h = good["hunks"][0]
+        bad = [
+            dict(good, hunks=[dict(h, new_start="3")]),
+            dict(good, hunks=[dict(h, new_lines=True)]),
+            dict(good, hunks=[dict(h, fingerprint=["x"])]),
+            dict(good, hunks=[dict(h, file=5)]),
+            dict(good, hunks=["nope"]),
+            dict(good, files=5),
+            dict(good, files=[["a"]]),
+            dict(good, head=7),
+            "[1, 2]", "{not json",
+        ]
+        for data in bad:
+            self._write_state(repo, data)
+            self.assertIsNone(state.load_state(repo.path, "feature"), data)
+            facts = self._facts(repo, only_new=True)
+            self.assertEqual(len(facts["hunks"]), 1)
+            code, det = run_script(repo, "detect", "--no-fetch")
+            self.assertEqual(code, 0, det)
+            self.assertIsNone(det["last_review"])
+
+    def test_state_of_another_branch_is_ignored(self):
+        repo = self._setup()
+        good = self._review(repo)
+        self._write_state(repo, dict(good, branch="other"))
+        self.assertIsNone(state.load_state(repo.path, "feature"))
+
+    def test_long_branch_name_key_fits_filesystem(self):
+        repo = self._setup()
+        name = "feature/" + "x" * 292
+        key = state.state_key(name)
+        self.assertLessEqual(len(key), 120)
+        self.assertRegex(key, r"-[0-9a-f]{8}$")
+        self.assertNotEqual(key, state.state_key(name + "y"))
+        saved = state.build_state(name, "h", [])
+        state.save_state(repo.path, name, saved)
+        self.assertEqual(state.load_state(repo.path, name), saved)
+
+    def test_state_survives_cleanup_and_facts(self):
+        from explain_changes_lib.workspace import cleanup_previous
+        repo = self._setup()
+        self._review(repo)
+        path = repo.path / ".explain-changes" / "estado" / (state.state_key("feature") + ".json")
+        cleanup_previous(repo.path)
+        self.assertTrue(path.is_file())
+        self._facts(repo)
+        self.assertTrue(path.is_file())
+        self.assertIsNotNone(state.load_state(repo.path, "feature"))
+
 
 if __name__ == "__main__":
     unittest.main()

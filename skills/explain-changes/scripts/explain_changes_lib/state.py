@@ -12,13 +12,14 @@ from typing import Any, Dict, Iterable, List, Optional
 from .workspace import WORKDIR, safe_write
 
 STATE_DIR = "estado"
+MAX_SAFE = 100  # keeps the file name far below filesystem limits
 
 
 def state_key(branch: str) -> str:
     """File-safe, collision-free key: sanitized name plus a short hash of the original."""
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", branch.replace("/", "__"))
     digest = hashlib.sha1(branch.encode("utf-8")).hexdigest()[:8]
-    return safe + "-" + digest
+    return safe[:MAX_SAFE] + "-" + digest
 
 
 def _rel(branch: str) -> str:
@@ -34,9 +35,27 @@ def load_state(repo: Path, branch: Optional[str]) -> Optional[Dict]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict) or not isinstance(data.get("hunks"), list):
-        return None
-    return data
+    return data if _valid(data, branch) else None
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _valid(data: Any, branch: str) -> bool:
+    """A corrupt or foreign state counts as no state; it must never crash a run."""
+    if not isinstance(data, dict) or data.get("branch") != branch:
+        return False
+    if not isinstance(data.get("head"), (str, type(None))):
+        return False
+    hunks, files = data.get("hunks"), data.get("files", [])
+    if not isinstance(hunks, list) or not isinstance(files, list):
+        return False
+    if not all(isinstance(f, str) for f in files):
+        return False
+    return all(isinstance(h, dict) and isinstance(h.get("fingerprint"), str)
+               and isinstance(h.get("file"), str) and _is_int(h.get("new_start"))
+               and _is_int(h.get("new_lines")) for h in hunks)
 
 
 def _get(hunk: Any, name: str) -> Any:
