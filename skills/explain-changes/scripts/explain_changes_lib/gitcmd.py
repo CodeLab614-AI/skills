@@ -12,6 +12,11 @@ SAFE_ENV = {
     "GIT_TERMINAL_PROMPT": "0",
     "GIT_PAGER": "cat",
 }
+# Variables that would redirect Git away from the repo (e.g. inside a hook).
+STRIPPED_ENV = (
+    "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR",
+)
 SAFE_OPTS = ["-c", "core.quotepath=off", "-c", "color.ui=never", "--no-pager"]
 
 
@@ -31,11 +36,12 @@ class GitError(Exception):
 
 def run_git(repo: Path, args: List[str], check: bool = True, timeout: int = 60,
             stdin: Optional[bytes] = None) -> GitResult:
-    env = dict(os.environ)
+    env = {k: v for k, v in os.environ.items() if k not in STRIPPED_ENV}
     env.update(SAFE_ENV)
     try:
         proc = subprocess.run(
             ["git", *SAFE_OPTS, *args], cwd=str(repo), env=env, input=stdin,
+            stdin=None if stdin is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
         )
     except subprocess.TimeoutExpired:

@@ -24,8 +24,15 @@ def _not_implemented(name: str) -> int:
         "code": "not_implemented", "message": f"{name} is not implemented yet"}}, 1)
 
 
+class JsonArgumentParser(argparse.ArgumentParser):
+    """Turn argparse usage errors into the bad_input block (exit 2, JSON)."""
+
+    def error(self, message):
+        raise BlockedError("bad_input", message)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="explain_changes")
+    parser = JsonArgumentParser(prog="explain_changes")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("detect")
@@ -60,8 +67,8 @@ def find_repo(cwd: Path) -> Path:
 
 
 def main(argv=None) -> int:
-    args = build_parser().parse_args(argv)
     try:
+        args = build_parser().parse_args(argv)
         find_repo(Path.cwd())
         return _not_implemented(args.command)
     except BlockedError as exc:
