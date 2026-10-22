@@ -15,7 +15,8 @@ MAX_BLOB_BYTES = 2 * 1024 * 1024
 MAX_INTRALINE_CHARS = 2000
 ZERO_SHA = "0" * 40
 WORKSPACE_DIR = ".explain-changes"
-DIFF_OPTS = ["--no-ext-diff", "--no-textconv", "--no-color", "-M50%"]
+DIFF_OPTS = ["--no-ext-diff", "--no-textconv", "--no-color", "-M50%",
+             "--src-prefix=a/", "--dst-prefix=b/"]
 _HUNK_RE = re.compile(rb"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _STATUS = {"A": "added", "D": "deleted", "M": "modified", "T": "modified",
            "R": "renamed", "C": "added", "U": "modified"}

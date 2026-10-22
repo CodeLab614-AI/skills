@@ -195,6 +195,102 @@ class FactsRangeTests(RepoTestCase):
         self.assertIn("AGENTS.md", [r["path"] for r in facts["rule_files"]])
 
 
+class FactsReviewFixTests(RepoTestCase):
+    def _feature_repo(self):
+        repo = self.make_repo("main")
+        repo.write("a.ts", "a1\na2\na3\n")
+        repo.write("b.ts", "b1\nb2\n")
+        repo.write("o.ts", "m1\nm2\nm3\n")
+        repo.commit("init")
+        repo.checkout("feature", create=True)
+        return repo, repo.git("rev-parse", "HEAD")
+
+    def test_second_parent_merges_not_double_counted(self):
+        repo, f0 = self._feature_repo()
+        repo.checkout("main")
+        repo.write("b.ts", "b1\nb2\nshared line\n")
+        repo.commit("main change")
+        repo.checkout("feature")
+        repo.checkout("side", create=True)
+        repo.write("side.ts", "s1\n")
+        repo.commit("side work")
+        repo.merge("main")
+        repo.checkout("feature")
+        repo.write("a.ts", "a1\nA2\na3\n")
+        repo.commit("feature work")
+        repo.merge("side")
+        outer = repo.git("rev-parse", "HEAD")
+        repo.write("b.ts", "shared line\nb1\nb2\nshared line\n")
+        repo.commit("user adds same text")
+        facts, _ = _facts(repo, "--from", f0, "--exclude-merge", outer)
+        hunks = [h for h in facts["hunks"] if h["file"] == "b.ts"]
+        self.assertEqual(len(hunks), 1)
+        self.assertEqual(hunks[0]["added"], ["shared line"])
+
+    def _main_merge_repo(self):
+        repo, f0 = self._feature_repo()
+        repo.write("a.ts", "a1\nA2\na3\n")
+        repo.commit("feature work")
+        repo.checkout("main")
+        repo.write("b.ts", "b1\nB2\n")
+        repo.commit("main change")
+        repo.checkout("feature")
+        repo.merge("main")
+        return repo, f0, repo.git("rev-parse", "HEAD")
+
+    def test_short_include_merge_sha_works(self):
+        repo, f0, merge = self._main_merge_repo()
+        facts, _ = _facts(repo, "--from", f0)
+        self.assertEqual(_paths(facts), ["a.ts"])
+        facts, _ = _facts(repo, "--from", f0, "--include-merge", merge[:8])
+        self.assertEqual(_paths(facts), ["a.ts", "b.ts"])
+
+    def test_short_exclude_merge_sha_not_processed_twice(self):
+        repo, f0, merge = self._main_merge_repo()
+        facts, _ = _facts(repo, "--from", f0, "--exclude-merge", merge[:8])
+        self.assertEqual(_paths(facts), ["a.ts"])
+        self.assertEqual(facts["excluded"]["merges"], [merge])
+
+    def test_bogus_merge_sha_is_bad_input(self):
+        repo, f0, _merge = self._main_merge_repo()
+        for flag in ("--exclude-merge", "--include-merge"):
+            code, data = run_script(repo, "facts", "--from", f0, flag, "deadbeef0")
+            self.assertEqual(code, 2, data)
+            self.assertEqual(data["error"]["code"], "bad_input")
+
+    def test_trivial_user_hunk_kept_even_if_foreign_added_same_text(self):
+        repo, f0 = self._feature_repo()
+        repo.checkout("main")
+        repo.checkout("otra", create=True)
+        repo.write("o.ts", "new1\nm1\nm2\nm3\n}\n")
+        repo.commit("otra work")
+        repo.checkout("feature")
+        repo.merge("otra")
+        merge = repo.git("rev-parse", "HEAD")
+        repo.write("o.ts", "new1\nm1\n}\nm2\nm3\n}\n")
+        repo.commit("user brace")
+        facts, _ = _facts(repo, "--from", f0, "--exclude-merge", merge)
+        braces = [h for h in facts["hunks"] if h["added"] == ["}"]]
+        self.assertEqual(len(braces), 2)
+        self.assertFalse(any(h["added"] == ["new1"] for h in facts["hunks"]))
+
+    def test_user_diff_prefix_config_does_not_break_subtraction(self):
+        for key, value in (("diff.noprefix", "true"), ("diff.mnemonicPrefix", "true")):
+            repo, f0 = self._feature_repo()
+            repo.git("config", key, value)
+            repo.checkout("main")
+            repo.checkout("otra", create=True)
+            repo.write("x.ts", "x1\nx2\n")
+            repo.commit("otra work")
+            repo.checkout("feature")
+            repo.write("a.ts", "a1\nA2\na3\n")
+            repo.commit("feature work")
+            repo.merge("otra")
+            merge = repo.git("rev-parse", "HEAD")
+            facts, _ = _facts(repo, "--from", f0, "--exclude-merge", merge)
+            self.assertEqual(_paths(facts), ["a.ts"], key)
+
+
 def _hunk(path, removed, added):
     return Hunk(file=path, old_start=1, old_lines=len(removed), new_start=1,
                 new_lines=len(added), removed=removed, added=added)

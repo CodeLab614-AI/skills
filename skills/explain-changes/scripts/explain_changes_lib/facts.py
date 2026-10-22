@@ -80,6 +80,7 @@ def _apply_subtraction(ctx: FactsContext, foreign: ranges.ForeignLines) -> List[
 def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Dict]] = None,
                   only_new: bool = False) -> Dict:
     repo = Path(repo)
+    spec = ranges.normalize_spec(repo, spec)
     old, new = ranges.resolve_range(repo, spec)
     files = diff_files(repo, old, new)
     if new is None:

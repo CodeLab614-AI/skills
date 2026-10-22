@@ -1,6 +1,7 @@
 """Diff ranges and subtraction of changes that are not the user's own."""
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,7 +12,8 @@ from .gitcmd import git_text, run_git
 from .model import BlockedError, Hunk
 
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-DIFF_FLAGS = ["--no-ext-diff", "--no-textconv", "--no-color"]
+DIFF_FLAGS = ["--no-ext-diff", "--no-textconv", "--no-color",
+              "--src-prefix=a/", "--dst-prefix=b/"]
 
 ForeignLines = Dict[str, "Counter[Tuple[str, str]]"]
 
@@ -52,6 +54,17 @@ def _base_sha(repo: Path) -> Tuple[Optional[str], Optional[str]]:
     except BlockedError:
         return None, None
     return name, _rev(repo, name)
+
+
+def normalize_spec(repo: Path, spec: RangeSpec) -> RangeSpec:
+    """Resolve user-given merge SHAs to full SHAs; unknown ones are bad_input."""
+    repo = Path(repo)
+    return RangeSpec(
+        from_ref=spec.from_ref, commit=spec.commit,
+        include_uncommitted=spec.include_uncommitted,
+        exclude_merges=list(dict.fromkeys(_need(repo, r) for r in spec.exclude_merges)),
+        include_merges=list(dict.fromkeys(_need(repo, r) for r in spec.include_merges)),
+        exclude_authors=list(spec.exclude_authors))
 
 
 def resolve_range(repo: Path, spec: RangeSpec) -> Tuple[str, Optional[str]]:
@@ -131,7 +144,7 @@ def _range_end(spec: RangeSpec, new: Optional[str]) -> str:
 def _auto_foreign_merges(repo: Path, spec: RangeSpec, old: str, end: str) -> List[str]:
     """Merges in range that only bring in the base branch (never the user's work)."""
     base, _sha = _base_sha(repo)
-    res = run_git(repo, ["log", "--merges", "--format=%H", "%s..%s" % (old, end)], check=False)
+    res = run_git(repo, ["log", "--merges", "--first-parent", "--format=%H", "%s..%s" % (old, end)], check=False)
     merges = res.out.decode("utf-8", errors="replace").split() if res.code == 0 else []
     chosen = []
     for sha in merges:
@@ -193,6 +206,13 @@ def foreign_lines(repo: Path, spec: RangeSpec, old: str,
     return foreign
 
 
+_TRIVIAL = re.compile(r"^[\W_]*$")
+
+
+def _is_trivial(line: str) -> bool:
+    return bool(_TRIVIAL.match(line.strip()))
+
+
 def subtract(hunks: List[Hunk], foreign: ForeignLines) -> Tuple[List[Hunk], List[str]]:
     """Drop hunks made only of foreign lines; keep anything doubtful whole."""
     pool = {path: Counter(c) for path, c in foreign.items()}
@@ -201,7 +221,8 @@ def subtract(hunks: List[Hunk], foreign: ForeignLines) -> Tuple[List[Hunk], List
     for hunk in hunks:
         lines = Counter([("-", l) for l in hunk.removed] + [("+", l) for l in hunk.added])
         have = pool.get(hunk.file)
-        if lines and have and all(have[k] >= n for k, n in lines.items()):
+        meaningful = any(not _is_trivial(t) for _s, t in lines)
+        if lines and have and meaningful and all(have[k] >= n for k, n in lines.items()):
             have.subtract(lines)
             dropped.append(hunk.id)
         else:
@@ -229,6 +250,6 @@ def mark_resolved_in_merge(repo: Path, hunks: List[Hunk], merges: List[str]) -> 
 
 
 def merges_in_range(repo: Path, spec: RangeSpec, old: str, new: Optional[str]) -> List[str]:
-    res = run_git(repo, ["log", "--merges", "--format=%H",
+    res = run_git(repo, ["log", "--merges", "--first-parent", "--format=%H",
                          "%s..%s" % (old, _range_end(spec, new))], check=False)
     return res.out.decode("utf-8", errors="replace").split() if res.code == 0 else []
