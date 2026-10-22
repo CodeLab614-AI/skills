@@ -82,6 +82,8 @@ class DetectCommitsTests(RepoTestCase):
         data = _detect(repo)
         self.assertEqual(data["other_author_commits"], [{"sha": sha, "email": "ana@empresa.com"}])
         q = _question(data, "other_authors")
+        self.assertTrue(_opt(q, "exclude")["recommended"])
+        self.assertFalse(_opt(q, "include")["recommended"])
         self.assertIn("--exclude-author", _opt(q, "exclude")["facts_args"])
         self.assertIn("ana@empresa.com", _opt(q, "exclude")["facts_args"])
 
@@ -126,6 +128,21 @@ class DetectCommitsTests(RepoTestCase):
         repo2.checkout("feat2")
         data2 = _detect(repo2)
         self.assertEqual(data2["merged"], {"how": "squash", "commit": squash_sha})
+
+    def test_merged_fast_forward(self):
+        repo = self._base_repo()
+        repo.checkout("feature", create=True)
+        repo.write("f.txt", "f\n")
+        head = repo.commit("f1")
+        repo.checkout("main")
+        repo.merge("feature", no_ff=False)
+        repo.checkout("feature")
+        data = _detect(repo)
+        self.assertEqual(data["merged"], {"how": "fast_forward", "commit": head})
+        q = _question(data, "scope")
+        self.assertTrue(_opt(q, "merge_commit")["recommended"])
+        self.assertEqual(_opt(q, "merge_commit")["facts_args"], ["--commit", head])
+        self.assertIsNotNone(_opt(q, "other_commit"))
 
     def test_scope_question_variants(self):
         repo = self._base_repo()

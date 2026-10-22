@@ -182,7 +182,10 @@ def find_merged(repo: Path, mb: Optional[str], base: str) -> Optional[Dict]:
     if _ok(repo, ["merge-base", "--is-ancestor", "HEAD", base]):
         rows = _lines(repo, ["rev-list", "--merges", "--ancestry-path", "--reverse",
                              "HEAD.." + base])
-        return {"how": "merge", "commit": rows[0]} if rows else None
+        if rows:
+            return {"how": "merge", "commit": rows[0]}
+        head = _text_or_none(repo, ["rev-parse", "HEAD"])
+        return {"how": "fast_forward", "commit": head} if head else None
     flags = ["--no-ext-diff", "--no-textconv"]
     diff = run_git(repo, ["diff", *flags, mb, "HEAD"], check=False).out
     if not diff.strip():
@@ -229,8 +232,10 @@ def _opt(oid: str, recommended: bool, facts_args: List[str], params: Optional[Di
 
 
 def scope_options(repo: Path, info: Dict) -> List[Dict]:
-    """Options for the scope question. from_commit and other_commit are pickers:
-    their facts_args are a prefix and the caller appends the chosen sha."""
+    """Options for the scope question.
+
+    from_commit and other_commit are pickers: their facts_args are only a prefix
+    (["--from"] / ["--commit"]) and the caller appends the chosen sha."""
     mb, pending = info["merge_base"], sum(info["uncommitted"].values()) > 0
     extra = ["--include-uncommitted"] if pending else []
     commits = [{"sha": c["sha"], "subject": c["subject"]}
@@ -277,9 +282,9 @@ def build_questions(repo: Path, info: Dict) -> Tuple[List[Dict], List[Dict], str
     emails = sorted({c["email"] for c in info["other_author_commits"]}, key=str.lower)
     if emails:
         candidates.append({"id": "other_authors", "options": [
-            _opt("exclude", False, [a for e in emails for a in ("--exclude-author", e)],
+            _opt("exclude", True, [a for e in emails for a in ("--exclude-author", e)],
                  {"emails": emails}),
-            _opt("include", True, []),
+            _opt("include", False, []),
         ]})
     for q in candidates:
         if len(q["options"]) == 1:
