@@ -41,17 +41,17 @@ Run `python3 "<SKILL_DIR>/scripts/explain_changes.py" detect` (add `--no-fetch` 
 | `not_excluded` | `.explain-changes/` could not be excluded from Git, so nothing is written |
 | `bad_input` | the call was malformed; show the message |
 
-Show each entry of `notices` in one plain sentence, translated. Codes: `fetch_failed` (working from the local base), `no_merge_base`, `author_check_skipped` (no `user.email`, so nobody is treated as foreign), `no_own_commits`, `history_rewritten` (new work detected by content), `auto_answered`.
+Show each entry of `notices` in one plain sentence, translated. Codes: `fetch_failed` (working from the local base), `no_merge_base` (no common ancestor with the base was found), `author_check_skipped` (no `user.email`, so nobody is treated as foreign), `no_own_commits` (the branch has no commits of its own beyond the base), `history_rewritten` (new work detected by content), `auto_answered`. Notices returned by `facts` and `report` (for example `state_cleanup_failed`, an old state file could not be removed) are relayed the same way.
 
 ## 2. Questions
 
-Ask **only** the entries of `questions`, in order. Never invent others. In Claude Code use a selection menu; in other agents use a numbered list. Translate the option ids into short labels in the user's language, mark the `recommended` one, and use `params` (`commits`, `emails`) to fill in details:
+Ask **only** the entries of `questions`, in order. Never invent others. In Claude Code use a selection menu; in other agents use a numbered list. Translate the option ids into short labels in the user's language, mark the `recommended` one, and use `params` (`commits`, `emails`) and the detect keys `foreign_merges[].branch_hint` / `files`, `other_author_commits[].email` and `last_review.new_commits` / `new_files` to fill in details:
 
 - `scope`: `merge_commit` (review the commit that merged the branch), `only_new` (only what is new since the last review), `whole_branch`, `from_commit` / `other_commit` (user picks a commit), `uncommitted_only`.
 - `foreign_merges`: leave out (`exclude`) or include merged branches that are not the user's.
 - `other_authors`: leave out or include commits by other authors.
 
-Each option carries `facts_args`. Keep the chosen options' `facts_args` and join them for step 3. For `from_commit` and `other_commit`, `facts_args` is only a prefix (`["--from"]` or `["--commit"]`): append the sha the user picks from `params.commits`. A `notices` entry `auto_answered` is a question with a single possible answer: do not ask it, mention it in one line, and use its `params.facts_args` as if it had been chosen. When in doubt about someone else's changes, include them.
+Each option carries `facts_args`. Keep the chosen options' `facts_args` and join them for step 3. For `from_commit` and `other_commit`, `facts_args` is only a prefix (`["--from"]` or `["--commit"]`): append the sha the user picks from `params.commits`. A `notices` entry `auto_answered` is a question with a single possible answer: do not ask it, mention it in one line, and use its `params.facts_args` as if it had been chosen. Exception: if the auto-answered option is `from_commit` or `other_commit` (a picker), still ask which commit, listing `params.params.commits`, and append the chosen sha to the prefix; only non-picker options are truly auto-answered. When in doubt about someone else's changes, include them.
 
 Then show one summary line without asking: what is reviewed, against which base (`summary.base`), and how many rules were found (`summary.rule_count`).
 
@@ -59,11 +59,11 @@ Then show one summary line without asking: what is reviewed, against which base 
 
 If `rule_files` is not empty, read each rule file (under the repo root) and translate its rules into structured targets, following [references/reglas.md](references/reglas.md). Then run:
 
-`python3 "<SKILL_DIR>/scripts/explain_changes.py" facts <chosen facts_args> --targets-stdin` with the targets JSON on stdin through a heredoc. Without rules, omit `--targets-stdin` and `<<'EOF'`.
+`python3 "<SKILL_DIR>/scripts/explain_changes.py" facts <chosen facts_args> --targets-stdin` with the targets JSON on stdin through a heredoc. Without rules, omit `--targets-stdin` and `<<'EOF'`. If it returns `bad_input` about the targets, fix the targets JSON and retry once; if it fails again, explain and stop.
 
 The range is exactly one of `--from <ref>` or `--commit <sha>`, plus the optional `--include-uncommitted`, `--exclude-merge <sha>`, `--include-merge <sha>`, `--exclude-author <email>` and `--only-new` that came from the options. Do not combine them any other way. The output lists `totals`, `batches` and `notices` (show them as in step 1). `references/mecanico.md` explains how changes are classified as mechanical or logic; when in doubt the script says logic.
 
-If there are no logic batches (`batches` is empty), skip to step 5: the report will only list mechanical changes.
+If there are no logic batches (`batches` is empty), skip step 4 and in step 5 send this to `verify`: `{"groups": [], "rules": [], "interpreted_in": "same_conversation"}` (omit `interpreted_in` if you want the report not to mention it); `report` needs the verified file to exist.
 
 ## 4. Interpretation
 
@@ -93,20 +93,20 @@ The interpreter must produce this JSON and nothing else. It must **not** suggest
 }
 ```
 
-Rules for the JSON: group by intent, ordered for reading (what is defined before what uses it); `side` is `new` (default) or `old`; `status` is `complies`, `seems_not` or `not_applicable`; every `file:line` must come from the bundle (rules from `rules[].lines`), because `verify` checks each one; the id `ungrouped` is reserved; omit `interpreted_in` unless the interpreter ran in the same conversation. Logic files with no hunks are cited with a location on that file. Anything left unplaced is added by `verify` to an "Ungrouped" group, so nothing is lost.
+Rules for the JSON: group by intent, ordered for reading (what is defined before what uses it); `side` is `new` (default) or `old`; `status` is `complies`, `seems_not` or `not_applicable`; every `file:line` must come from the bundle (rules from `rules[].lines`), because `verify` checks each one; the id `ungrouped` is reserved; omit `interpreted_in` unless the interpreter ran in the same conversation. Logic files with no hunks (`logic_files`) are cited with `{"file": <path>, "start": 1, "end": 1, "side": "new"}` (the old path with `"side": "old"` for a deleted file), because `verify` needs integer `start` and `end`. Anything left unplaced is added by `verify` to an "Ungrouped" group, so nothing is lost.
 
-With several batches, collect one interpretation per batch, then run one last merge step (same isolation) that receives only those interpretations and unifies groups that cross batches into a single JSON. Then run `verify` once.
+With several batches, collect one interpretation per batch, then run one last merge step (same isolation) that receives only those interpretations and unifies groups that cross batches and merges the per-batch `rules` entries into a single JSON. Then run `verify` once.
 
 ## 5. Verify and report
 
 1. `python3 "<SKILL_DIR>/scripts/explain_changes.py" verify` with the interpretation JSON on stdin (heredoc). It returns `unverified_count` and `ungrouped_count`.
-2. `python3 "<SKILL_DIR>/scripts/explain_changes.py" report --lang <code>`, where `<code>` is the conversation language (`en`, `es`, ...). For any other language add `--labels-stdin` and send a JSON object of strings with every label key of the English set translated (see [references/reporte.md](references/reporte.md)). The result gives the report path and `notices`.
+2. `python3 "<SKILL_DIR>/scripts/explain_changes.py" report --lang <code>`, where `<code>` is the conversation language (`en`, `es`, ...). For any other language add `--labels-stdin` and send a JSON object of strings with every label key listed in [references/reporte.md](references/reporte.md) translated. The result gives the report path and `notices`; relay them.
 
 If `verify` or `report` returns `bad_input`, fix the JSON you sent and retry once; if it fails again, explain and stop.
 
 ## 6. Walkthrough
 
-Tell the user where the report is (`.explain-changes/reporte.md`). Then:
+Tell the user where the report is (`.explain-changes/reporte.md`). Build the walkthrough by reading (read-only) `.explain-changes/reporte.md`, `.explain-changes/run/verified.json` and `.explain-changes/run/facts.json`. Then:
 
 1. **Summary first**: files and `+/-`, logic against mechanical lines, rules touched, and any unverified citations.
 2. **Group by group** in `order`, one per step. Example (in the user's language):
@@ -118,7 +118,7 @@ Tell the user where the report is (`.explain-changes/reporte.md`). Then:
      Rules: .agents/rules/hooks.md:8 "hooks live in use*.ts files" -> complies
    ```
 
-   After each group offer three options (translated): **Next** / **Explain more** / **Show me the code**. "Explain more" gives a deeper account of the same group; "Show me the code" shows the lines with a read-only command or by reading the file. Mention "changed since your last review" when the report says so. Unverified citations are marked as such, never presented as fact.
+   After each group offer three options (translated): **Next** / **Explain more** / **Show me the code**. "Explain more" gives a deeper account of the same group; "Show me the code" shows the lines by reading the file, or with `git show` / `git diff` (never `git status`). Mention "changed since your last review" when any hunk of the group has `changed_since_review`. Show unverified citations with a warning sign, never as fact. The `ungrouped` group (name null) is its own step, labeled in the user's language like "Changes not grouped".
 3. **Mechanical groups together** in one step: lockfiles, generated files, whitespace, moved code and repeated replacements (with their exceptions).
 4. Finish by saying the walkthrough is over and where the report is.
 

@@ -60,6 +60,13 @@ class SkillMdTests(unittest.TestCase):
         self.assertTrue(flags)
         self.assertEqual(sorted(flags - known), [])
 
+    def test_reporte_lists_every_english_label_key(self):
+        from explain_changes_lib.labels import LABELS
+        text = (SKILL_DIR / "references" / "reporte.md").read_text(encoding="utf-8")
+        section = text.split("## Label keys", 1)[1]
+        keys = re.findall(r"^\| `([a-z_]+)` \|", section, re.M)
+        self.assertEqual(sorted(keys), sorted(LABELS["en"].keys()))
+
 
 if __name__ == "__main__":
     unittest.main()

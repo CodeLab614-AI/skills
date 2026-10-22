@@ -37,3 +37,51 @@ After writing the report, the agent walks the user through the logic groups in `
 one group at a time, in the conversation language: say what the group does, point to its
 files and lines, and wait for the user before moving on. The walkthrough adds no
 suggestions, risks or improvements, and nothing is committed.
+
+
+## Label keys (English set)
+
+For `--labels-stdin`, send a JSON object of strings with every key below, translated. Keep the keys, translate only the text.
+
+| key | English text |
+|---|---|
+| `title` | Change report |
+| `h_summary` | Summary |
+| `h_rules` | Rules |
+| `h_groups` | Logic changes |
+| `h_mechanical` | Mechanical changes |
+| `h_unverified` | Unverified citations |
+| `h_provenance` | Provenance |
+| `files` | files |
+| `additions` | additions |
+| `deletions` | deletions |
+| `logic_lines` | logic lines |
+| `mechanical_lines` | mechanical lines |
+| `rules_touched` | rules touched |
+| `no_rules` | No rules apply to these changes. |
+| `complies` | Complies |
+| `seems_not` | Seems not to comply |
+| `not_applicable` | Not applicable |
+| `rule` | rule |
+| `ungrouped` | Ungrouped |
+| `unnamed` | Unnamed group |
+| `changed_since_review` | Changed since your last review |
+| `rules_label` | Rules |
+| `kind_lockfile` | Lockfiles |
+| `kind_generated` | Generated files |
+| `kind_whitespace` | Whitespace and formatting |
+| `kind_move` | Moved code |
+| `kind_repeated_replacement` | Repeated replacements |
+| `replaces` | replaced by |
+| `in_files` | files |
+| `exceptions` | Exceptions |
+| `unverified_citation` | unverified citation |
+| `from` | From |
+| `to` | To |
+| `working_tree` | working tree |
+| `excluded_merges` | Excluded merges |
+| `excluded_authors` | Excluded authors |
+| `same_conversation` | Interpreted in the same conversation |
+| `none` | none |
+| `commits` | Commits |
+| `commits_truncated` | (list truncated to the first 50) |
