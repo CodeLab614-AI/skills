@@ -35,6 +35,16 @@ def read_rule_text(repo: Path, path: str) -> List[str]:
     return data.decode("utf-8", errors="replace").splitlines()
 
 
+def _is_text_file(real: Path) -> bool:
+    if real.name == ".DS_Store":
+        return False
+    try:
+        with open(real, "rb") as fh:
+            return b"\0" not in fh.read(8192)
+    except OSError:
+        return False
+
+
 def _tree_files(repo: Path, top: str) -> List[str]:
     root = os.path.join(str(repo), top)
     found: List[str] = []
@@ -71,7 +81,11 @@ def _resolve_import(repo: Path, importer: str, target: str) -> Optional[str]:
     real = _resolve(repo, rel)
     if real is None:
         return None
-    return os.path.relpath(str(real), os.path.realpath(repo)).replace(os.sep, "/")
+    out = os.path.relpath(str(real), os.path.realpath(repo)).replace(os.sep, "/")
+    parts = out.split("/")
+    if ".git" in parts or parts[-1].startswith(".env"):
+        return None
+    return out
 
 
 def find_rule_files(repo: Path, changed_paths: List[str]) -> List[Dict]:
@@ -80,7 +94,8 @@ def find_rule_files(repo: Path, changed_paths: List[str]) -> List[Dict]:
     seen = set()
 
     def add(path: str, kind: str, imported_from: Optional[str] = None) -> bool:
-        if path in seen or _resolve(repo, path) is None:
+        real = _resolve(repo, path)
+        if path in seen or real is None or not _is_text_file(real):
             return False
         seen.add(path)
         result.append({"path": path, "kind": kind,
@@ -93,6 +108,8 @@ def find_rule_files(repo: Path, changed_paths: List[str]) -> List[Dict]:
             return
         for target in _import_targets(read_rule_text(repo, path)):
             rel = _resolve_import(repo, path, target)
+            if rel is None and target.rstrip(".,;:)") != target:
+                rel = _resolve_import(repo, path, target.rstrip(".,;:)"))
             if rel is not None and add(rel, "import", path):
                 add_imports(rel, depth + 1)
 

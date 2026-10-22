@@ -63,6 +63,33 @@ class RulesTests(RepoTestCase):
         self.assertEqual(paths, ["AGENTS.md", "CLAUDE.md"])
         self.assertEqual(rules.read_rule_text(repo.path, "link.md"), [])
 
+    def test_import_with_trailing_punctuation(self):
+        repo = self.make_repo()
+        repo.write("CLAUDE.md", "See @docs/style.md.\nAlso (@a.md, and more\n")
+        repo.write("docs/style.md", "x\n")
+        repo.write("a.md", "y\n")
+        paths = [f["path"] for f in rules.find_rule_files(repo.path, [])]
+        self.assertEqual(paths, ["CLAUDE.md", "docs/style.md", "a.md"])
+
+    def test_imports_never_reach_git_dir_or_env_files(self):
+        repo = self.make_repo()
+        repo.write(".env", "SECRET=1\n")
+        repo.write(".env.local", "SECRET=2\n")
+        repo.write("CLAUDE.md", "@.git/config @.env @.env.local @ok.md\n")
+        repo.write("ok.md", "ok\n")
+        paths = [f["path"] for f in rules.find_rule_files(repo.path, [])]
+        self.assertEqual(paths, ["CLAUDE.md", "ok.md"])
+
+    def test_rule_dirs_skip_binaries_and_ds_store(self):
+        repo = self.make_repo()
+        repo.write(".agents/rules/.DS_Store", "x")
+        repo.write(".agents/rules/bin.dat", b"ab\0cd")
+        repo.write(".cursor/rules/r.mdc", "ok\n")
+        repo.write("CLAUDE.md", "@img.png\n")
+        repo.write("img.png", b"\x89PNG\0\0")
+        paths = [f["path"] for f in rules.find_rule_files(repo.path, [])]
+        self.assertEqual(paths, ["CLAUDE.md", ".cursor/rules/r.mdc"])
+
     def test_nested_agents_md(self):
         repo = self.make_repo()
         repo.write("pkg/AGENTS.md", "p\n")
