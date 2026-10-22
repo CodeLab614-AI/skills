@@ -11,7 +11,9 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from explain_changes_lib import detect as detect_mod  # noqa: E402
+from explain_changes_lib import facts as facts_mod  # noqa: E402
 from explain_changes_lib import gitcmd  # noqa: E402
+from explain_changes_lib.ranges import RangeSpec  # noqa: E402
 from explain_changes_lib.model import BlockedError  # noqa: E402
 
 
@@ -67,12 +69,35 @@ def find_repo(cwd: Path) -> Path:
     return Path(res.out.decode("utf-8", errors="replace").strip())
 
 
+def _range_spec(args) -> RangeSpec:
+    return RangeSpec(
+        from_ref=args.from_ref, commit=args.commit,
+        include_uncommitted=args.include_uncommitted,
+        exclude_merges=list(args.exclude_merge), include_merges=list(args.include_merge),
+        exclude_authors=list(args.exclude_author))
+
+
+def _read_targets(args):
+    if not args.targets_stdin:
+        return None
+    try:
+        data = json.loads(sys.stdin.read() or "null")
+    except ValueError as exc:
+        raise BlockedError("bad_input", "Targets are not valid JSON: %s" % exc)
+    if data is not None and not isinstance(data, list):
+        raise BlockedError("bad_input", "Targets must be a JSON list.")
+    return data
+
+
 def main(argv=None) -> int:
     try:
         args = build_parser().parse_args(argv)
         repo = find_repo(Path.cwd())
         if args.command == "detect":
             return _emit(detect_mod.detect(repo, fetch=not args.no_fetch))
+        if args.command == "facts":
+            return _emit(facts_mod.summary(facts_mod.collect_facts(
+                repo, _range_spec(args), _read_targets(args), args.only_new)))
         return _not_implemented(args.command)
     except BlockedError as exc:
         return _emit({"ok": False, "error": {"code": exc.code, "message": exc.message}}, 2)
