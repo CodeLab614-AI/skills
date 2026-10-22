@@ -27,7 +27,7 @@ class GitCmdTest(RepoTestCase):
             self.assertEqual(code, 2)
             self.assertEqual(data["error"]["code"], "not_a_git_repo")
         repo = self.make_repo()
-        code, data = run_script(repo, "verify")
+        code, data = run_script(repo, "report", "--lang", "es")
         self.assertEqual(code, 1)
         self.assertEqual(data["error"]["code"], "not_implemented")
 

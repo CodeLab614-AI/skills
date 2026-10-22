@@ -16,6 +16,7 @@ from explain_changes_lib import gitcmd  # noqa: E402
 from explain_changes_lib.ranges import RangeSpec  # noqa: E402
 from explain_changes_lib.model import BlockedError  # noqa: E402
 from explain_changes_lib.targets import load_targets  # noqa: E402
+from explain_changes_lib import verify as verify_mod  # noqa: E402
 from explain_changes_lib.bundle import bundle as bundle_mod  # noqa: E402
 
 
@@ -96,6 +97,10 @@ def main(argv=None) -> int:
                 repo, _range_spec(args), _read_targets(args), args.only_new)))
         if args.command == "bundle":
             return _emit(bundle_mod(repo, args.batch))
+        if args.command == "verify":
+            interp = verify_mod.parse_interpretation(sys.stdin.read())
+            result = verify_mod.verify(repo, verify_mod.load_facts(repo), interp)
+            return _emit(verify_mod.summary(verify_mod.write_verified(repo, result), result))
         return _not_implemented(args.command)
     except BlockedError as exc:
         return _emit({"ok": False, "error": {"code": exc.code, "message": exc.message}}, 2)
