@@ -36,6 +36,13 @@ class DocsTest(unittest.TestCase):
         self.assertNotIn("to be verified", text)
         self.assertNotIn("por verificar", text)
 
+    def test_codex_policy_file_and_docs_section(self):
+        yaml = (ROOT / "skills/explain-changes/agents/openai.yaml").read_text(encoding="utf-8")
+        self.assertRegex(yaml, r"(?m)^policy:\s*\n\s+allow_implicit_invocation: false\s*$")
+        section = DOC.read_text(encoding="utf-8").split("## Invocation lock per agent")[1]
+        for agent in ("Claude Code", "Codex", "Cursor", "OpenCode", "Antigravity"):
+            self.assertIn(agent, section, agent)
+
     def test_docs_dir_has_only_usage_markdown(self):
         files = [p for p in (ROOT / "docs").rglob("*") if p.is_file()]
         self.assertEqual([p.name for p in files], ["explain-changes.md"])
