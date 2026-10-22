@@ -12,6 +12,7 @@ FALLBACK_BASES = ("main", "master", "develop")
 FETCH_TIMEOUT = 20
 MAX_PICK = 30
 SQUASH_SCAN = 300
+MAX_UNTRACKED_READ = 2 * 1024 * 1024
 
 
 def _ok(repo: Path, args: List[str]) -> bool:
@@ -139,12 +140,13 @@ def other_authors(commits: List[Dict], user_email: Optional[str]) -> List[Dict]:
             if c["email"].lower() != me]
 
 
-def read_status(repo: Path) -> Tuple[Dict[str, int], List[str]]:
+def read_status(repo: Path) -> Tuple[Dict[str, int], List[str], List[str]]:
     """Count staged, unstaged and untracked paths (ignored files never show)."""
     res = run_git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
     entries = res.out.decode("utf-8", errors="replace").split("\0")
     counts = {"staged": 0, "unstaged": 0, "untracked": 0}
     paths: List[str] = []
+    untracked: List[str] = []
     i = 0
     while i < len(entries):
         entry = entries[i]
@@ -156,13 +158,14 @@ def read_status(repo: Path) -> Tuple[Dict[str, int], List[str]]:
             i += 1  # skip the original path of a rename or copy
         if x == "?":
             counts["untracked"] += 1
+            untracked.append(path)
         else:
             if x not in " ?!":
                 counts["staged"] += 1
             if y not in " ?!":
                 counts["unstaged"] += 1
         paths.append(path)
-    return counts, paths
+    return counts, paths, untracked
 
 
 def _patch_ids(repo: Path, patch: bytes) -> List[Tuple[str, str]]:
@@ -182,9 +185,11 @@ def find_merged(repo: Path, mb: Optional[str], base: str) -> Optional[Dict]:
     if _ok(repo, ["merge-base", "--is-ancestor", "HEAD", base]):
         rows = _lines(repo, ["rev-list", "--merges", "--ancestry-path", "--reverse",
                              "HEAD.." + base])
-        if rows:
-            return {"how": "merge", "commit": rows[0]}
         head = _text_or_none(repo, ["rev-parse", "HEAD"])
+        for sha in rows:
+            parents = _lines(repo, ["rev-list", "--parents", "-n", "1", sha])
+            if head and parents and head in parents[0].split()[1:]:
+                return {"how": "merge", "commit": sha}
         tip = _text_or_none(repo, ["rev-parse", base + "^{commit}"])
         if head and head != tip:  # HEAD == base tip means a branch with no own commits
             return {"how": "fast_forward", "commit": head}
@@ -218,14 +223,43 @@ def count_unpushed(repo: Path) -> int:
     return int(out) if out and out.isdigit() else 0
 
 
-def diff_size(repo: Path, mb: Optional[str], extra_paths: List[str]) -> Tuple[Dict, List[str]]:
+def _count_lines(path: Path) -> int:
+    """Line count of a text file; unreadable, binary or oversized files count 0."""
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_UNTRACKED_READ:
+            return 0
+        data = path.read_bytes()
+    except OSError:
+        return 0
+    if b"\0" in data:
+        return 0
+    return data.count(b"\n") + (0 if not data or data.endswith(b"\n") else 1)
+
+
+def diff_size(repo: Path, mb: Optional[str], extra_paths: List[str],
+              untracked: List[str]) -> Tuple[Dict, List[str]]:
+    """Files and lines changed against mb (tracked + untracked); renames count by new path."""
     paths = set(extra_paths)
     lines = 0
-    for row in _lines(repo, ["diff", "--numstat", "--no-ext-diff", "--no-textconv",
-                             mb or "HEAD"]):
-        add, dele, name = (row.split("\t", 2) + ["", ""])[:3]
-        paths.add(name)
+    res = run_git(repo, ["diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv",
+                         mb or "HEAD"], check=False)
+    fields = res.out.decode("utf-8", errors="replace").split("\0")
+    i = 0
+    while i < len(fields):
+        head = fields[i]
+        i += 1
+        parts = head.split("\t", 2)
+        if len(parts) < 3:
+            continue
+        add, dele, name = parts
+        if name == "":  # rename or copy: the next two fields are old and new path
+            name = fields[i + 1] if i + 1 < len(fields) else ""
+            i += 2
+        if name:
+            paths.add(name)
         lines += (int(add) if add.isdigit() else 0) + (int(dele) if dele.isdigit() else 0)
+    for name in untracked:
+        lines += _count_lines(repo / name)
     return {"files": len(paths), "lines": lines}, sorted(paths)
 
 
@@ -248,25 +282,31 @@ def scope_options(repo: Path, info: Dict) -> List[Dict]:
                    for r in _commit_rows(repo, ["-n", str(MAX_PICK), "HEAD"])]
     review = info["last_review"]
     fresh = review is not None and (review.get("head") != info["head"] or pending)
+    has_own = mb is not None and mb != info["head"]
     options: List[Dict] = []
     if info["merged"]:
-        options.append(_opt("merge_commit", True, ["--commit", info["merged"]["commit"]]))
+        options.append(_opt("merge_commit", False, ["--commit", info["merged"]["commit"]]))
     if fresh and mb:
-        options.append(_opt("only_new", True, ["--from", mb, "--only-new", *extra]))
-    has_own = mb is not None and mb != info["head"]
-    can_whole = has_own
-    if can_whole:
-        options.append(_opt("whole_branch", not options, ["--from", mb, *extra]))
+        options.append(_opt("only_new", False, ["--from", mb, "--only-new", *extra]))
+    if has_own:
+        options.append(_opt("whole_branch", False, ["--from", mb, *extra]))
     if info["merged"]:
         options.append(_opt("other_commit", False, ["--commit"], {"commits": commits}))
     else:
-        options.append(_opt("from_commit", not options, ["--from"], {"commits": commits}))
+        options.append(_opt("from_commit", False, ["--from"], {"commits": commits}))
     if pending or (not info["on_base"] and has_own):
         options.append(_opt("uncommitted_only", False, ["--from", "HEAD", "--include-uncommitted"]))
-    if len(options) == 1:
-        options[0]["recommended"] = True
-    elif not any(o["recommended"] for o in options):
-        options[0]["recommended"] = True
+    ids = [o["id"] for o in options]
+    if not has_own and pending:
+        rec = "uncommitted_only"  # nothing of the branch's own: the pending work is the point
+    elif info["merged"]:
+        rec = "merge_commit"
+    elif fresh and mb:
+        rec = "only_new"
+    else:
+        rec = ids[0]
+    for o in options:
+        o["recommended"] = o["id"] == rec
     return options
 
 
@@ -293,7 +333,9 @@ def build_questions(repo: Path, info: Dict) -> Tuple[List[Dict], List[Dict], str
     for q in candidates:
         if len(q["options"]) == 1:
             notices.append({"code": "auto_answered",
-                            "params": {"question": q["id"], "option": q["options"][0]["id"]}})
+                            "params": {"question": q["id"], "option": q["options"][0]["id"],
+                                       "facts_args": q["options"][0]["facts_args"],
+                                       "params": q["options"][0]["params"]}})
         else:
             questions.append(q)
     return questions, notices, chosen
@@ -339,10 +381,10 @@ def _describe_changes(repo: Path, info: Dict) -> Dict:
     user_email = _text_or_none(repo, ["config", "user.email"])
     if not user_email:
         notices.append({"code": "author_check_skipped", "params": {}})
-    counts, status_paths = read_status(repo)
+    counts, status_paths, untracked = read_status(repo)
     base_short = base[len("origin/"):] if base.startswith("origin/") else base
     review = state.load_state(repo, branch) if branch else None
-    size, changed = diff_size(repo, mb, status_paths)
+    size, changed = diff_size(repo, mb, status_paths, untracked)
     out = {
         "own_commits": commits,
         "foreign_merges": foreign_merges(repo, mb, base),

@@ -29,6 +29,11 @@ def _opt(question, oid):
     return None
 
 
+def _check_one_recommended(test, data):
+    for q in data["questions"]:
+        test.assertEqual(sum(1 for o in q["options"] if o["recommended"]), 1, q["id"])
+
+
 def _codes(data):
     return [n["code"] for n in data["notices"]]
 
@@ -115,6 +120,7 @@ class DetectCommitsTests(RepoTestCase):
         data = _detect(repo)
         self.assertEqual(data["merged"], {"how": "merge", "commit": merge_sha})
         q = _question(data, "scope")
+        _check_one_recommended(self, data)
         self.assertTrue(_opt(q, "merge_commit")["recommended"])
         self.assertEqual(_opt(q, "merge_commit")["facts_args"], ["--commit", merge_sha])
 
@@ -160,6 +166,69 @@ class DetectCommitsTests(RepoTestCase):
         q = _question(data, "scope")
         self.assertEqual([o["id"] for o in q["options"]], ["from_commit", "uncommitted_only"])
 
+    def test_merged_branch_with_previous_review_has_one_recommended(self):
+        from explain_changes_lib import detect as detect_mod
+        repo = self._base_repo()
+        repo.checkout("feature", create=True)
+        repo.write("f.txt", "f\n")
+        repo.commit("f1")
+        repo.checkout("main")
+        repo.merge("feature")
+        repo.checkout("feature")
+        old = {"branch": "feature", "head": "0" * 40, "reviewed_at": "x", "hunks": []}
+        with mock.patch("explain_changes_lib.state.load_state", return_value=old):
+            data = detect_mod.detect(repo.path, fetch=False)
+        _check_one_recommended(self, data)
+        self.assertTrue(_opt(_question(data, "scope"), "merge_commit")["recommended"])
+
+    def test_stale_branch_behind_moved_base_with_pending_changes(self):
+        repo = self._base_repo()
+        repo.checkout("feature", create=True)
+        repo.checkout("main")
+        repo.write("m.txt", "m\n")
+        repo.commit("m1")
+        repo.checkout("feature")
+        repo.write("a.txt", "work\n")
+        data = _detect(repo)
+        q = _question(data, "scope")
+        _check_one_recommended(self, data)
+        self.assertTrue(_opt(q, "uncommitted_only")["recommended"])
+        self.assertFalse(_opt(q, "merge_commit")["recommended"])
+        self.assertIsNotNone(_opt(q, "other_commit"))
+
+    def test_unrelated_later_merge_on_base_is_not_how_merge(self):
+        repo = self._base_repo()
+        repo.checkout("feature", create=True)
+        repo.write("f.txt", "f\n")
+        head = repo.commit("f1")
+        repo.checkout("main")
+        repo.merge("feature", no_ff=False)
+        repo.write("m.txt", "m\n")
+        repo.commit("m1")
+        repo.checkout("x", create=True)
+        repo.write("x.txt", "x\n")
+        repo.commit("x1")
+        repo.checkout("main")
+        repo.merge("x")
+        repo.checkout("feature")
+        data = _detect(repo)
+        self.assertEqual(data["merged"], {"how": "fast_forward", "commit": head})
+
+    def test_diff_size_with_rename_and_untracked(self):
+        from explain_changes_lib import detect as detect_mod
+        repo = self.make_repo("main")
+        repo.write("a.txt", "1\n2\n3\n4\n")
+        repo.commit("init")
+        repo.checkout("feature", create=True)
+        repo.git("mv", "a.txt", "b.txt")
+        repo.commit("rename")
+        repo.write("n.txt", "x\ny\nz")
+        repo.write("bin.dat", b"\0\1\2")
+        with mock.patch("explain_changes_lib.rules.find_rule_files", return_value=[]) as m:
+            data = detect_mod.detect(repo.path, fetch=False)
+        self.assertEqual(m.call_args[0][1], ["b.txt", "bin.dat", "n.txt"])
+        self.assertEqual(data["diff_size"], {"files": 3, "lines": 3})
+
     def test_scope_question_variants(self):
         repo = self._base_repo()
         repo.checkout("feature", create=True)
@@ -185,6 +254,10 @@ class DetectCommitsTests(RepoTestCase):
         self.assertIsNone(_question(data, "scope"))
         self.assertIn("auto_answered", _codes(data))
         self.assertEqual(data["summary"]["scope_option"], "from_commit")
+        auto = [n for n in data["notices"] if n["code"] == "auto_answered"][0]["params"]
+        self.assertEqual(auto["option"], "from_commit")
+        self.assertEqual(auto["facts_args"], ["--from"])
+        self.assertEqual(auto["params"]["commits"][0]["subject"], "init")
 
     def test_scope_only_new_with_last_review(self):
         from explain_changes_lib import detect as detect_mod
@@ -198,6 +271,7 @@ class DetectCommitsTests(RepoTestCase):
         with mock.patch("explain_changes_lib.state.load_state", return_value=old):
             data = detect_mod.detect(repo.path, fetch=False)
         q = _question(data, "scope")
+        _check_one_recommended(self, data)
         self.assertTrue(_opt(q, "only_new")["recommended"])
         self.assertFalse(_opt(q, "whole_branch")["recommended"])
         self.assertEqual(_opt(q, "only_new")["facts_args"], ["--from", mb, "--only-new"])
