@@ -1,0 +1,4 @@
+# Codex invocation policy (https://learn.chatgpt.com/docs/build-skills):
+# with false, Codex does not start this skill on its own; explicit $explain-changes still works.
+policy:
+  allow_implicit_invocation: false

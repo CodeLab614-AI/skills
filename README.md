@@ -36,7 +36,15 @@ Invoke the skill yourself (for example `/explain-changes`). It is meant to run o
 
 ### Invocation lock per agent
 
-Invocation lock per agent: to be verified. This table will say, agent by agent, whether the `disable-model-invocation` field is enforced or is only an instruction in the skill text.
+| Agent | Lock or instruction | How the isolated interpreter is launched | Source |
+|---|---|---|---|
+| Claude Code | Lock: `disable-model-invocation: true` stops Claude from loading the skill on its own (also stops preloading into subagents). | Subagents: a skill can set `context: fork` plus `agent`, `model` and `effort` (for example `medium`). This skill does not set them; the flow asks for a subagent with a clean bundle. Not verified in a live run. | [Claude Code skills](https://code.claude.com/docs/en/skills) |
+| Codex | Lock: `agents/openai.yaml` with `policy.allow_implicit_invocation: false` (included in this skill). Explicit `$explain-changes` still works. The frontmatter field is ignored. | Custom subagents (TOML in `.codex/agents/`) with `model_reasoning_effort`; Codex spawns them when the instructions ask for it. Not verified in a live run. | [Codex skills](https://learn.chatgpt.com/docs/build-skills), [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents) |
+| Cursor | Lock: `disable-model-invocation: true` (documented: the skill is only included when invoked with `/skill-name`). Not verified in a live run. | Subagents in `.cursor/agents/` with `model` (effort as `model[effort=...]`) and `readonly`. Not verified in a live run. | [Cursor skills](https://cursor.com/docs/context/skills), [subagents](https://cursor.com/docs/subagents) |
+| OpenCode | Lock: not by frontmatter. `metadata: opencode/autoinvoke: "false"` hides it from model guidance, or `permission.skill` `deny`/`ask` in `opencode.json`. Neither is set by this skill; only the `description` is an instruction. Not verified. | Agents with `mode: subagent` and a model; effort only through provider options (`reasoningEffort`). Not verified in a live run. | [OpenCode skills](https://opencode.ai/docs/skills/), [agents](https://opencode.ai/docs/agents/) |
+| Antigravity | No lock documented: only `name` and `description`; the agent decides by description. The skill text is the only instruction. | Subagents exist but their configuration is not verified. Not verified. | [Antigravity skills](https://antigravity.google/docs/skills) |
+
+Docs were read on 2026-10-22; nothing was tested inside the installed agents yet. Where there is no lock, the skill still tells the agent to run only on explicit request.
 
 ### License
 
@@ -78,7 +86,15 @@ Invoca la skill tú mismo (por ejemplo `/explain-changes`). Está pensada para c
 
 ### Candado de invocación por agente
 
-Candado de invocación por agente: por verificar. Esta tabla dirá, agente por agente, si el campo `disable-model-invocation` se respeta o es solo una indicación en el texto de la skill.
+| Agente | Candado o indicación | Cómo se lanza el intérprete aislado | Fuente |
+|---|---|---|---|
+| Claude Code | Candado: `disable-model-invocation: true` impide que Claude cargue la skill por su cuenta (y que se precargue en subagentes). | Subagentes: una skill puede fijar `context: fork` junto con `agent`, `model` y `effort` (por ejemplo `medium`). Esta skill no los fija; el flujo pide un subagente con un paquete limpio. No verificado en una ejecución real. | [Skills de Claude Code](https://code.claude.com/docs/en/skills) |
+| Codex | Candado: `agents/openai.yaml` con `policy.allow_implicit_invocation: false` (incluido en esta skill). `$explain-changes` explícito sigue funcionando. El campo del frontmatter se ignora. | Subagentes personalizados (TOML en `.codex/agents/`) con `model_reasoning_effort`; Codex los lanza cuando las instrucciones lo piden. No verificado en una ejecución real. | [Skills de Codex](https://learn.chatgpt.com/docs/build-skills), [subagentes](https://learn.chatgpt.com/docs/agent-configuration/subagents) |
+| Cursor | Candado: `disable-model-invocation: true` (documentado: la skill solo se incluye si se invoca con `/nombre-de-skill`). No verificado en una ejecución real. | Subagentes en `.cursor/agents/` con `model` (esfuerzo como `model[effort=...]`) y `readonly`. No verificado en una ejecución real. | [Skills de Cursor](https://cursor.com/docs/context/skills), [subagentes](https://cursor.com/docs/subagents) |
+| OpenCode | Candado: no por frontmatter. `metadata: opencode/autoinvoke: "false"` la oculta de la guía del modelo, o `permission.skill` `deny`/`ask` en `opencode.json`. Esta skill no fija ninguno; solo la `description` es una indicación. No verificado. | Agentes con `mode: subagent` y un modelo; el esfuerzo solo mediante opciones del proveedor (`reasoningEffort`). No verificado en una ejecución real. | [Skills de OpenCode](https://opencode.ai/docs/skills/), [agentes](https://opencode.ai/docs/agents/) |
+| Antigravity | No hay candado documentado: solo `name` y `description`; el agente decide por la descripción. El texto de la skill es la única indicación. | Existen subagentes, pero su configuración no está verificada. No verificado. | [Skills de Antigravity](https://antigravity.google/docs/skills) |
+
+La documentación se leyó el 2026-10-22; todavía no se probó nada dentro de los agentes instalados. Donde no hay candado, la skill igualmente indica al agente que corra solo si se le pide de forma explícita.
 
 ### Licencia
 

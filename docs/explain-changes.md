@@ -99,3 +99,7 @@ The skill needs Python 3.9 or newer and checks it before anything else; if it is
 ### `fetch_failed` (a notice, not a block)
 
 The `git fetch` of the base branch failed, usually for lack of network. The run continues with your local copy of the base and says so. Run again once you are online to compare against a fresher base. To skip the fetch on purpose, ask for no network access and the skill passes `--no-fetch`.
+
+## Invocation lock per agent
+
+The skill is meant to run only when you invoke it. Whether the agent enforces that depends on the agent; the table is in the [README](../README.md#invocation-lock-per-agent). Summary: Claude Code and Codex have a documented lock (`disable-model-invocation: true` and `agents/openai.yaml`); Cursor documents the same frontmatter field (not verified in a live run); OpenCode needs `opencode.json` settings; Antigravity documents no lock, so only the `description` guides it. Everything not tested live is marked "not verified" there.

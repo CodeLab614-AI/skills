@@ -26,8 +26,15 @@ class DocsTest(unittest.TestCase):
         self.assertIn("npx skills add CodeLab614-AI/skills --skill explain-changes", text)
         self.assertIn("English", text)
         self.assertIn("Español", text)
-        self.assertEqual(text.count("to be verified"), 1)
-        self.assertEqual(text.count("por verificar"), 1)
+        en = text.split("### Invocation lock per agent")[1].split("### License")[0]
+        es = text.split("### Candado de invocación por agente")[1].split("### Licencia")[0]
+        for agent in ("Claude Code", "Codex", "Cursor", "OpenCode", "Antigravity"):
+            self.assertIn("| " + agent + " |", en, agent)
+            self.assertIn("| " + agent + " |", es, agent)
+        self.assertIn("not verified", en.lower())
+        self.assertIn("no verificado", es.lower())
+        self.assertNotIn("to be verified", text)
+        self.assertNotIn("por verificar", text)
 
     def test_docs_dir_has_only_usage_markdown(self):
         files = [p for p in (ROOT / "docs").rglob("*") if p.is_file()]
