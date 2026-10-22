@@ -27,9 +27,9 @@ class GitCmdTest(RepoTestCase):
             self.assertEqual(code, 2)
             self.assertEqual(data["error"]["code"], "not_a_git_repo")
         repo = self.make_repo()
-        code, data = run_script(repo, "report", "--lang", "es")
-        self.assertEqual(code, 1)
-        self.assertEqual(data["error"]["code"], "not_implemented")
+        code, data = run_script(repo, "nope")
+        self.assertEqual(code, 2)
+        self.assertEqual(data["error"]["code"], "bad_input")
 
     def test_cli_bad_input_is_json_block(self):
         repo = self.make_repo()

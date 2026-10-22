@@ -143,6 +143,7 @@ def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Target]] =
 
     facts = {
         "ok": True,
+        "only_new": only_new,
         "range": {"old": old, "new": new, "spec": spec.to_json()},
         "files": [f.to_json() for f in ctx.files],
         "hunks": [h.to_json() for h in ctx.hunks],

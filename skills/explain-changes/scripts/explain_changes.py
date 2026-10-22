@@ -18,16 +18,12 @@ from explain_changes_lib.model import BlockedError  # noqa: E402
 from explain_changes_lib.targets import load_targets  # noqa: E402
 from explain_changes_lib import verify as verify_mod  # noqa: E402
 from explain_changes_lib.bundle import bundle as bundle_mod  # noqa: E402
+from explain_changes_lib import report as report_mod  # noqa: E402
 
 
 def _emit(payload: dict, code: int = 0) -> int:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
     return code
-
-
-def _not_implemented(name: str) -> int:
-    return _emit({"ok": False, "error": {
-        "code": "not_implemented", "message": f"{name} is not implemented yet"}}, 1)
 
 
 class JsonArgumentParser(argparse.ArgumentParser):
@@ -86,6 +82,23 @@ def _read_targets(args):
     return load_targets(sys.stdin.read())
 
 
+def _read_labels():
+    """Optional ``labels`` JSON object on stdin (never read from a terminal)."""
+    if sys.stdin is None or sys.stdin.isatty():
+        return None
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return None
+    try:
+        labels = json.loads(raw)
+    except ValueError:
+        raise BlockedError("bad_input", "The labels on stdin are not valid JSON.")
+    if not isinstance(labels, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in labels.items()):
+        raise BlockedError("bad_input", "The labels must be a JSON object of strings.")
+    return labels
+
+
 def main(argv=None) -> int:
     try:
         args = build_parser().parse_args(argv)
@@ -101,7 +114,7 @@ def main(argv=None) -> int:
             interp = verify_mod.parse_interpretation(sys.stdin.read())
             result = verify_mod.verify(repo, verify_mod.load_facts(repo), interp)
             return _emit(verify_mod.summary(verify_mod.write_verified(repo, result), result))
-        return _not_implemented(args.command)
+        return _emit(report_mod.write_report(repo, args.lang, _read_labels()))
     except BlockedError as exc:
         return _emit({"ok": False, "error": {"code": exc.code, "message": exc.message}}, 2)
     except Exception as exc:  # internal error

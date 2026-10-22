@@ -86,6 +86,7 @@ def run_script(repo, *args: str, stdin: str | None = None,
     proc = subprocess.run(
         [sys.executable, str(SCRIPT), *args], cwd=path, env=full_env,
         input=stdin.encode("utf-8") if stdin is not None else None,
+        stdin=None if stdin is not None else subprocess.DEVNULL,
         capture_output=True,
     )
     out = proc.stdout.decode("utf-8", errors="replace").strip()

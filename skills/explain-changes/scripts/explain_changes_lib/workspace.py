@@ -26,12 +26,15 @@ def ensure_excluded(repo: Path) -> None:
         exclude = Path(raw)
         if not exclude.is_absolute():
             exclude = repo / exclude
-        exclude.parent.mkdir(parents=True, exist_ok=True)
-        existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
-        if EXCLUDE_LINE not in existing.splitlines():
-            sep = "" if not existing or existing.endswith("\n") else "\n"
-            with open(exclude, "a", encoding="utf-8") as fh:
-                fh.write(sep + EXCLUDE_LINE + "\n")
+        try:
+            exclude.parent.mkdir(parents=True, exist_ok=True)
+            existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+            if EXCLUDE_LINE not in existing.splitlines():
+                sep = "" if not existing or existing.endswith("\n") else "\n"
+                with open(exclude, "a", encoding="utf-8") as fh:
+                    fh.write(sep + EXCLUDE_LINE + "\n")
+        except OSError:
+            pass  # not writable: the check below turns it into the not_excluded block
     if not _is_ignored(repo):
         raise BlockedError(
             "not_excluded",
@@ -108,3 +111,14 @@ def cleanup_previous(repo: Path) -> List[str]:
     if (_workdir(repo)).exists():
         _write_manifest(repo, keep)
     return removed
+
+
+def remove_workfile(repo: Path, rel: str) -> None:
+    """Delete one file inside the workspace and drop it from the manifest."""
+    repo = Path(repo)
+    target = _checked_target(repo, rel)
+    if target.is_file() or target.is_symlink():
+        target.unlink()
+    norm = Path(rel).as_posix()
+    files = [f for f in _read_manifest(repo) if f != norm]
+    _write_manifest(repo, files)
