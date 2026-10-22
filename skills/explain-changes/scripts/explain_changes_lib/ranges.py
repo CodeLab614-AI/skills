@@ -253,3 +253,29 @@ def merges_in_range(repo: Path, spec: RangeSpec, old: str, new: Optional[str]) -
     res = run_git(repo, ["log", "--merges", "--first-parent", "--format=%H",
                          "%s..%s" % (old, _range_end(spec, new))], check=False)
     return res.out.decode("utf-8", errors="replace").split() if res.code == 0 else []
+
+
+MAX_COMMITS = 50
+
+
+def commits_in_range(repo: Path, spec: RangeSpec, old: str,
+                     new: Optional[str]) -> Tuple[List[Dict], bool]:
+    """Non-merge commits of the reviewed range, oldest first, minus excluded authors.
+
+    Returns ``(commits, truncated)``; capped at MAX_COMMITS."""
+    repo = Path(repo)
+    fmt = "--format=%H%x1f%ae%x1f%s"
+    if spec.commit:
+        args = ["log", "--no-walk", "--no-merges", fmt, new or spec.commit]
+    else:
+        args = ["log", "--no-merges", "--reverse", fmt, "%s..%s" % (old, _range_end(spec, new))]
+    res = run_git(repo, args, check=False)
+    if res.code != 0:
+        return [], False
+    skip = {a.lower() for a in spec.exclude_authors}
+    found: List[Dict] = []
+    for row in res.out.decode("utf-8", errors="replace").split("\n"):
+        parts = row.split("\x1f", 2)
+        if len(parts) == 3 and parts[1].lower() not in skip:
+            found.append({"sha": parts[0], "subject": parts[2], "email": parts[1]})
+    return found[:MAX_COMMITS], len(found) > MAX_COMMITS

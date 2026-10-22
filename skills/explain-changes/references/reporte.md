@@ -2,7 +2,7 @@
 
 `report --lang <code>` writes `.explain-changes/reporte.md` (overwritten each run) and the
 branch state `.explain-changes/estado/<branch>-<hash>.json`. Optional stdin: a JSON object
-`labels` of strings; its keys replace the built-in texts for `--lang` (`en`, `es`) and let
+`labels` of strings, read only when `--labels-stdin` is given; its keys replace the built-in texts for `--lang` (`en`, `es`) and let
 the agent supply any other language (send every key of the English set translated).
 
 ## Sections (fixed order)
@@ -20,7 +20,7 @@ the agent supply any other language (send every key of the English set translate
 5. **Unverified citations**: every citation the script could not confirm, marked with a
    warning sign. Omitted when all citations verified. Unverified citations are also marked
    inline where they appear.
-6. **Provenance**: from, to (or working tree), merge-base, excluded merges and authors, and
+6. **Provenance**: from, to (or working tree), merge-base, excluded merges and authors, the reviewed commits (short sha and subject, at most 50, non-merge, excluded authors left out), and
    "interpreted in the same conversation" when `interpreted_in` is `same_conversation`.
 
 ## State and cleanup

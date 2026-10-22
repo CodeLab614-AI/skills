@@ -190,6 +190,12 @@ def _provenance(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
                          or labels["none"]),
            "- %s: %s" % (labels["excluded_authors"], ", ".join(ex.get("authors") or [])
                          or labels["none"])]
+    commits = facts.get("commits") or []
+    if commits:
+        out.append("- %s:" % labels["commits"])
+        out += ["  - %s %s" % (c["sha"][:10], c.get("subject", "")) for c in commits]
+        if facts.get("commits_truncated"):
+            out.append("  - " + labels["commits_truncated"])
     if verified.get("interpreted_in") == "same_conversation":
         out.append("- " + labels["same_conversation"])
     return out

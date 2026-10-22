@@ -58,6 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("report")
     p.add_argument("--lang", required=True)
+    p.add_argument("--labels-stdin", action="store_true")
     return parser
 
 
@@ -82,9 +83,9 @@ def _read_targets(args):
     return load_targets(sys.stdin.read())
 
 
-def _read_labels():
-    """Optional ``labels`` JSON object on stdin (never read from a terminal)."""
-    if sys.stdin is None or sys.stdin.isatty():
+def _read_labels(args):
+    """``labels`` JSON object on stdin, only with --labels-stdin."""
+    if not args.labels_stdin:
         return None
     raw = sys.stdin.read()
     if not raw.strip():
@@ -114,7 +115,7 @@ def main(argv=None) -> int:
             interp = verify_mod.parse_interpretation(sys.stdin.read())
             result = verify_mod.verify(repo, verify_mod.load_facts(repo), interp)
             return _emit(verify_mod.summary(verify_mod.write_verified(repo, result), result))
-        return _emit(report_mod.write_report(repo, args.lang, _read_labels()))
+        return _emit(report_mod.write_report(repo, args.lang, _read_labels(args)))
     except BlockedError as exc:
         return _emit({"ok": False, "error": {"code": exc.code, "message": exc.message}}, 2)
     except Exception as exc:  # internal error

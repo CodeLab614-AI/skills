@@ -141,6 +141,7 @@ def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Target]] =
     for step in PIPELINE:
         step(ctx)
 
+    commits, commits_truncated = ranges.commits_in_range(repo, spec, old, new)
     facts = {
         "ok": True,
         "only_new": only_new,
@@ -156,6 +157,8 @@ def collect_facts(repo: Path, spec: RangeSpec, targets: Optional[List[Target]] =
         "batches": ctx.batches,
         "totals": compute_totals(ctx.files, ctx.hunks),
         "notices": ctx.notices,
+        "commits": commits,
+        "commits_truncated": commits_truncated,
     }
     cleanup_previous(repo)
     safe_write(repo, FACTS_REL, json.dumps(facts, ensure_ascii=False, indent=1))

@@ -43,6 +43,8 @@ LABELS: Dict[str, Dict[str, str]] = {
         "excluded_authors": "Excluded authors",
         "same_conversation": "Interpreted in the same conversation",
         "none": "none",
+        "commits": "Commits",
+        "commits_truncated": "(list truncated to the first 50)",
     },
     "es": {
         "title": "Reporte de cambios",
@@ -83,5 +85,7 @@ LABELS: Dict[str, Dict[str, str]] = {
         "excluded_authors": "Autores excluidos",
         "same_conversation": "Interpretado en la misma conversación",
         "none": "ninguno",
+        "commits": "Commits",
+        "commits_truncated": "(lista recortada a los primeros 50)",
     },
 }

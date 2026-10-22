@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import unittest
 
+import helpers
 from helpers import RepoTestCase, run_script
 
 from explain_changes_lib import report
@@ -32,6 +35,8 @@ def small():
                                            "files": ["a.ts", "b.ts", "c.ts"],
                                            "exceptions": [{"file": "d.ts", "hunk_ids": ["h-9"]}]}],
         "batches": [], "targets": [], "notices": [],
+        "commits": [{"sha": "c" * 40, "subject": "Arregla el login", "email": "me@x.io"}],
+        "commits_truncated": True,
         "totals": {"files": 2, "additions": 7, "deletions": 6,
                    "logic_lines": 3, "mechanical_lines": 10},
     }
@@ -67,6 +72,15 @@ class RenderTests(unittest.TestCase):
         self.assertIn("d.ts", text)
         self.assertIn("+2", text)
         self.assertIn("bot@x.io", text)
+
+    def test_provenance_lists_commits(self):
+        facts, verified = small()
+        text = report.render(facts, verified, report.LABELS["en"])
+        self.assertIn("cccccccccc Arregla el login", text)
+        self.assertIn(report.LABELS["en"]["commits_truncated"], text)
+        facts["commits_truncated"] = False
+        text = report.render(facts, verified, report.LABELS["en"])
+        self.assertNotIn(report.LABELS["en"]["commits_truncated"], text)
 
     def test_no_rules_section_says_so(self):
         facts, verified = small()
@@ -183,15 +197,75 @@ class WriteReportTests(RepoTestCase):
         repo = self.feature()
         run_script(repo, "facts", "--from", "main")
         run_script(repo, "verify", stdin='{"groups": []}')
-        code, data = run_script(repo, "report", "--lang", "fr",
+        code, data = run_script(repo, "report", "--lang", "fr", "--labels-stdin",
                                 stdin=json.dumps({"h_summary": "Résumé"}))
         self.assertEqual(code, 0, data)
         text = (repo.path / ".explain-changes" / "reporte.md").read_text(encoding="utf-8")
         self.assertIn("## Résumé", text)
-        code, data = run_script(repo, "report", "--lang", "es", stdin="{nope")
+        code, data = run_script(repo, "report", "--lang", "es", "--labels-stdin",
+                                stdin="{nope")
         self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
-        code, data = run_script(repo, "report", "--lang", "es", stdin="[1]")
+        code, data = run_script(repo, "report", "--lang", "es", "--labels-stdin",
+                                stdin="[1]")
         self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
+
+    def test_report_without_flag_ignores_stdin(self):
+        repo = self.feature()
+        run_script(repo, "facts", "--from", "main")
+        run_script(repo, "verify", stdin='{"groups": []}')
+        proc = subprocess.Popen([sys.executable, str(helpers.SCRIPT), "report", "--lang", "es"],
+                                cwd=repo.path, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            proc.wait(timeout=30)  # stdin stays open and is never written
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            self.fail("report blocked on stdin")
+        finally:
+            proc.stdin.close()
+            out = proc.stdout.read()
+            proc.stdout.close()
+            proc.stderr.close()
+        self.assertEqual(proc.returncode, 0, out)
+        code, data = run_script(repo, "report", "--lang", "es", "--labels-stdin", stdin="{nope")
+        self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
+
+    def test_facts_commits(self):
+        repo = self.make_repo()
+        repo.write("a.txt", "base\n")
+        repo.commit("base")
+        repo.checkout("feat", create=True)
+        repo.write("a.txt", "base\n1\n")
+        repo.commit("mine one")
+        repo.write("a.txt", "base\n1\n2\n")
+        repo.commit("bot change", email="bot@x.io")
+        repo.write("a.txt", "base\n1\n2\n3\n")
+        sha = repo.commit("mine two")
+        run_script(repo, "facts", "--from", "main", "--exclude-author", "bot@x.io")
+        facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
+        self.assertEqual([c["subject"] for c in facts["commits"]], ["mine one", "mine two"])
+        self.assertEqual(facts["commits"][1]["sha"], sha)
+        self.assertEqual(facts["commits"][0]["email"], "me@x.io")
+        self.assertFalse(facts["commits_truncated"])
+        run_script(repo, "facts", "--commit", sha)
+        facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
+        self.assertEqual([c["subject"] for c in facts["commits"]], ["mine two"])
+        run_script(repo, "facts", "--from", "HEAD", "--include-uncommitted")
+        facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
+        self.assertEqual(facts["commits"], [])
+
+    def test_facts_commits_capped(self):
+        repo = self.make_repo()
+        repo.write("a.txt", "base\n")
+        repo.commit("base")
+        repo.checkout("feat", create=True)
+        for i in range(52):
+            repo.git("commit", "-q", "--allow-empty", "-m", "c%d" % i)
+        run_script(repo, "facts", "--from", "main")
+        facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
+        self.assertEqual(len(facts["commits"]), 50)
+        self.assertTrue(facts["commits_truncated"])
 
     def test_missing_inputs_is_bad_input(self):
         repo = self.feature()
