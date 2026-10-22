@@ -185,7 +185,10 @@ def find_merged(repo: Path, mb: Optional[str], base: str) -> Optional[Dict]:
         if rows:
             return {"how": "merge", "commit": rows[0]}
         head = _text_or_none(repo, ["rev-parse", "HEAD"])
-        return {"how": "fast_forward", "commit": head} if head else None
+        tip = _text_or_none(repo, ["rev-parse", base + "^{commit}"])
+        if head and head != tip:  # HEAD == base tip means a branch with no own commits
+            return {"how": "fast_forward", "commit": head}
+        return None
     flags = ["--no-ext-diff", "--no-textconv"]
     diff = run_git(repo, ["diff", *flags, mb, "HEAD"], check=False).out
     if not diff.strip():
@@ -250,14 +253,15 @@ def scope_options(repo: Path, info: Dict) -> List[Dict]:
         options.append(_opt("merge_commit", True, ["--commit", info["merged"]["commit"]]))
     if fresh and mb:
         options.append(_opt("only_new", True, ["--from", mb, "--only-new", *extra]))
-    can_whole = mb is not None and (not info["on_base"] or info["unpushed"] > 0)
+    has_own = mb is not None and mb != info["head"]
+    can_whole = has_own
     if can_whole:
         options.append(_opt("whole_branch", not options, ["--from", mb, *extra]))
     if info["merged"]:
         options.append(_opt("other_commit", False, ["--commit"], {"commits": commits}))
     else:
         options.append(_opt("from_commit", not options, ["--from"], {"commits": commits}))
-    if not info["on_base"] or pending:
+    if pending or (not info["on_base"] and has_own):
         options.append(_opt("uncommitted_only", False, ["--from", "HEAD", "--include-uncommitted"]))
     if len(options) == 1:
         options[0]["recommended"] = True
@@ -355,6 +359,8 @@ def _describe_changes(repo: Path, info: Dict) -> Dict:
     }
     if not out["on_base"]:
         out["merged"] = find_merged(repo, mb, base)
+        if out["merged"] is None and mb is not None and mb == info["head"]:
+            notices.append({"code": "no_own_commits", "params": {"base": base}})
     merged_view = dict(info, **out)
     questions, auto, chosen = build_questions(repo, merged_view)
     notices.extend(auto)

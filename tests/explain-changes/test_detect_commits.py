@@ -136,6 +136,8 @@ class DetectCommitsTests(RepoTestCase):
         head = repo.commit("f1")
         repo.checkout("main")
         repo.merge("feature", no_ff=False)
+        repo.write("m.txt", "m\n")
+        repo.commit("m1")
         repo.checkout("feature")
         data = _detect(repo)
         self.assertEqual(data["merged"], {"how": "fast_forward", "commit": head})
@@ -143,6 +145,20 @@ class DetectCommitsTests(RepoTestCase):
         self.assertTrue(_opt(q, "merge_commit")["recommended"])
         self.assertEqual(_opt(q, "merge_commit")["facts_args"], ["--commit", head])
         self.assertIsNotNone(_opt(q, "other_commit"))
+
+    def test_fresh_branch_at_base_tip_is_not_merged(self):
+        repo = self._base_repo()
+        repo.checkout("fresh", create=True)
+        data = _detect(repo)
+        self.assertIsNone(data["merged"])
+        self.assertIn("no_own_commits", _codes(data))
+        self.assertIsNone(_question(data, "scope"))
+        self.assertEqual(data["summary"]["scope_option"], "from_commit")
+        self.assertIn("auto_answered", _codes(data))
+        repo.write("a.txt", "changed\n")
+        data = _detect(repo)
+        q = _question(data, "scope")
+        self.assertEqual([o["id"] for o in q["options"]], ["from_commit", "uncommitted_only"])
 
     def test_scope_question_variants(self):
         repo = self._base_repo()
@@ -197,6 +213,8 @@ class DetectCommitsTests(RepoTestCase):
         repo.write(".gitignore", "ignored.txt\n")
         repo.commit("ignore")
         repo.checkout("feature", create=True)
+        repo.write("f.txt", "f\n")
+        repo.commit("f1")
         repo.write("ignored.txt", "x\n")
         self.assertEqual(_detect(repo)["uncommitted"],
                          {"staged": 0, "unstaged": 0, "untracked": 0})
