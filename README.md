@@ -12,7 +12,7 @@ A collection of agent skills, installable with the [`skills`](https://github.com
 
 | Skill | What it does |
 |---|---|
-| `explain-changes` | Explains the changes on your current Git branch group by group (what they do, which project rules they touch, what is mechanical) and writes a report. Read-only. Usage guide: [docs/explain-changes.md](docs/explain-changes.md) |
+| `explain-changes` | Tells you in under two minutes what the AI did on your current Git branch (the few things that matter and which project rules seem not to be met) and writes a short report plus an HTML report with the code. Read-only. Usage guide: [docs/explain-changes.md](docs/explain-changes.md) |
 
 ### Install
 
@@ -32,7 +32,7 @@ Only the folder `skills/<name>/` is installed. Tests, docs and CI stay in this r
 
 ### Use
 
-Invoke the skill yourself (for example `/explain-changes`). It is meant to run only when you ask for it. See [docs/explain-changes.md](docs/explain-changes.md) for the flow, an example walkthrough and troubleshooting.
+Invoke the skill yourself (for example `/explain-changes`). It is meant to run only when you ask for it. See [docs/explain-changes.md](docs/explain-changes.md) for the flow, an example summary and troubleshooting.
 
 ### Invocation lock per agent
 
@@ -62,7 +62,7 @@ Colección de skills para agentes, instalables con la CLI [`skills`](https://git
 
 | Skill | Qué hace |
 |---|---|
-| `explain-changes` | Explica los cambios de tu rama de Git grupo por grupo (qué hacen, qué reglas del proyecto tocan, qué es mecánico) y escribe un reporte. Solo lectura. Guía de uso: [docs/explain-changes.md](docs/explain-changes.md) |
+| `explain-changes` | Te cuenta en menos de 2 minutos qué hizo la IA en tu rama de Git (las pocas cosas que importan y qué reglas del proyecto parecen no cumplirse) y escribe un reporte corto y otro en HTML con el código. Solo lectura. Guía de uso: [docs/explain-changes.md](docs/explain-changes.md) |
 
 ### Instalación
 
@@ -82,7 +82,7 @@ Solo se instala la carpeta `skills/<nombre>/`. Las pruebas, la documentación y 
 
 ### Uso
 
-Invoca la skill tú mismo (por ejemplo `/explain-changes`). Está pensada para correr solo cuando tú la pides. En [docs/explain-changes.md](docs/explain-changes.md) están el flujo, un ejemplo del recorrido y la solución de problemas.
+Invoca la skill tú mismo (por ejemplo `/explain-changes`). Está pensada para correr solo cuando tú la pides. En [docs/explain-changes.md](docs/explain-changes.md) están el flujo, un ejemplo del resumen y la solución de problemas.
 
 ### Candado de invocación por agente
 

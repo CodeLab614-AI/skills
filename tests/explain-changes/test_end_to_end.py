@@ -54,10 +54,7 @@ class EndToEndTests(RepoTestCase):
         code, data = run_script(repo, "facts", "--from", "main", "--include-uncommitted")
         self.assertEqual(code, 0, data)
         interp = {"interpreted_in": "subagent",
-                  "groups": [{"id": "g", "name": "A", "what": "w", "order": 1,
-                              "locations": [{"file": "src/a.txt", "start": 5, "end": 5,
-                                             "side": "new"}]}],
-                  "rules": []}
+                  "points": [{"title": "A", "line": "w", "files": ["src/a.txt"]}]}
         code, data = run_script(repo, "verify", stdin=json.dumps(interp))
         self.assertEqual(code, 0, data)
         code, data = run_script(repo, "report", "--lang", "es")
@@ -66,7 +63,8 @@ class EndToEndTests(RepoTestCase):
         self.assertEqual(snapshot(repo), before)
         self.assertEqual(repo.git("status", "--porcelain", env=NOLOCK), status)
         self.assertEqual(repo.git("rev-parse", "HEAD"), head)
-        self.assertTrue((repo.path / ".explain-changes" / "reporte.md").exists())
+        self.assertTrue((repo.path / ".explain-changes" / "report.md").exists())
+        self.assertTrue((repo.path / ".explain-changes" / "report.html").exists())
 
 
 if __name__ == "__main__":

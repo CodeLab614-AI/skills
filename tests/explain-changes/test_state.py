@@ -65,7 +65,7 @@ class StateFlowTests(RepoTestCase):
         saved = state.build_state(branch, repo.git("rev-parse", "HEAD"), facts["hunks"],
                                   [f["path"] for f in facts["files"]])
         rel = state.save_state(repo.path, branch, saved)
-        self.assertEqual(rel, ".explain-changes/estado/%s.json" % state.state_key(branch))
+        self.assertEqual(rel, ".explain-changes/state/%s.json" % state.state_key(branch))
         return saved
 
     def test_save_and_load_roundtrip(self):
@@ -177,7 +177,7 @@ class StateFlowTests(RepoTestCase):
             state.save_state(repo.path, "", {})
 
     def _write_state(self, repo, data, branch="feature"):
-        path = repo.path / ".explain-changes" / "estado" / (state.state_key(branch) + ".json")
+        path = repo.path / ".explain-changes" / "state" / (state.state_key(branch) + ".json")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(data if isinstance(data, str) else json.dumps(data), encoding="utf-8")
 
@@ -226,7 +226,7 @@ class StateFlowTests(RepoTestCase):
         from explain_changes_lib.workspace import cleanup_previous
         repo = self._setup()
         self._review(repo)
-        path = repo.path / ".explain-changes" / "estado" / (state.state_key("feature") + ".json")
+        path = repo.path / ".explain-changes" / "state" / (state.state_key("feature") + ".json")
         cleanup_previous(repo.path)
         self.assertTrue(path.is_file())
         self._facts(repo)

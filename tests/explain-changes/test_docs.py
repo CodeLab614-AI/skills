@@ -69,6 +69,17 @@ class DocsTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
         self.assertRegex(workflow, r"(?m)^permissions:\n  contents: read$")
 
+    def test_usage_doc_describes_the_two_minute_summary(self):
+        doc = DOC.read_text(encoding="utf-8")
+        for needle in ("under two minutes", "report.md", "report.html", "state/", "Watch your rules",
+                       "The rest", "not grouped", "explained"):
+            self.assertIn(needle, doc, needle)
+        for old in ("reporte.md", "estado/", "walkthrough", "group by group", "Ungrouped"):
+            self.assertNotIn(old, doc, old)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("group by group", readme)
+        self.assertNotIn("grupo por grupo", readme)
+
 
 if __name__ == "__main__":
     unittest.main()

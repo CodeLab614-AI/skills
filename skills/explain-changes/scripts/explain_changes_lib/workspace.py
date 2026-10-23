@@ -12,7 +12,7 @@ from .model import BlockedError
 WORKDIR = ".explain-changes"
 MANIFEST = ".manifest.json"
 EXCLUDE_LINE = "/.explain-changes/"
-KEEP_PREFIX = "estado/"
+KEEP_PREFIX = "state/"
 
 
 def _is_ignored(repo: Path) -> bool:

@@ -47,18 +47,20 @@ Examples (rule text, then target):
 - "Never touch `migrations/`": `{paths: ["migrations/**"], change_kinds: []}`
 - "Scripts must stay executable": `{paths: ["scripts/**"], change_kinds: ["mode"]}`
 
-Rules that only describe style or behaviour without pointing at a path or kind of change (for example "write clear names") need no target; you still cite them in the interpretation if a change clearly touches them.
+Rules that only describe style or behaviour without pointing at a path or kind of change (for example "write clear names") need no target; if a change clearly breaks one, you still report it as a warning.
 
 ## Rules beat mechanical classification
 
-The script applies targets to every hunk and file, **including mechanical ones** (lockfiles, generated, whitespace, moves, repeated replacements; see [mecanico.md](mecanico.md)). A match lifts the change to logic and records the target id, so it is never hidden under "mechanical". The bundle also gives `mechanical_summary` (file and kind) so you can notice a rule that your targets missed; if a rule clearly touches a mechanical file, cite it in the interpretation anyway.
+The script applies targets to every hunk and file, **including mechanical ones** (lockfiles, generated, whitespace, moves, repeated replacements; see [mechanical.md](mechanical.md)). A match lifts the change to logic and records the target id, so it is never hidden under "mechanical". The bundle also gives `mechanical_summary` (file and kind) so you can notice a rule that your targets missed; if a change to a mechanical file clearly breaks a rule, report it as a warning anyway.
 
-## The three states
+## Rule warnings
 
-For each rule that is touched, the interpretation sets `status` and cites the rule line and the changed lines (`verify` checks both). The report layout is in [reporte.md](reporte.md).
+The user only hears about rules that seem not to be met. For each such rule the interpretation has one entry in `warnings`:
 
-- `complies`: the change touches the rule and follows it.
-- `seems_not`: the change touches the rule and seems not to follow it. State the fact (what the rule says, what the code does); give no advice and no fix.
-- `not_applicable`: the rule is about something these changes do not touch.
+- `name`: the rule's name as the user knows it. Take it from the folder or the file: `.../preserve-comments/RULE.md` is `preserve-comments`, `.agents/rules/hooks.md` is `hooks`. If you leave it out, the script derives it the same way. Never use the target `id` (`R1`...): it is internal, and `verify` refuses a warning that mentions it.
+- `says`: what the rule says, translated to the language of the conversation.
+- `change`: the concrete change that does not follow it, in one sentence (code in backticks).
+- `rule`: `{"file", "line"}` of the rule (the line numbers in the bundle's `rules`).
+- `changes`: `{"file", "line", "side"}` of the changed lines (`side` is `new` or `old`).
 
-The report groups them in that order. The status is the interpreter's reading, not a verdict, so the wording stays neutral.
+Cite only the changes that really break the rule: if the rule allows rewriting comments, a rewritten comment does not count. Rules that are met or do not apply are not reported at all. `verify` checks the rule line and every changed line against the real diff; whatever it cannot confirm is marked with a warning sign and shown without code. State the fact (what the rule says, what the code does); give no advice and no fix. The report layout is in [report-format.md](report-format.md).

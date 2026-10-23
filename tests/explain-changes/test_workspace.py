@@ -49,17 +49,17 @@ class WorkspaceTest(RepoTestCase):
 
     def test_cleanup_only_deletes_manifest_files(self):
         repo = self.make_repo()
-        workspace.safe_write(repo.path, "reporte.md", "r")
-        workspace.safe_write(repo.path, "estado/a.json", "{}")
+        workspace.safe_write(repo.path, "report.md", "r")
+        workspace.safe_write(repo.path, "state/a.json", "{}")
         workspace.safe_write(repo.path, "run/facts.json", "{}")
         mine = repo.path / ".explain-changes" / "mio.txt"
         mine.write_text("keep")
         removed = workspace.cleanup_previous(repo.path)
-        self.assertIn("reporte.md", removed)
+        self.assertIn("report.md", removed)
         self.assertIn("run/facts.json", removed)
         self.assertTrue(mine.exists())
-        self.assertTrue((repo.path / ".explain-changes" / "estado" / "a.json").exists())
-        self.assertFalse((repo.path / ".explain-changes" / "reporte.md").exists())
+        self.assertTrue((repo.path / ".explain-changes" / "state" / "a.json").exists())
+        self.assertFalse((repo.path / ".explain-changes" / "report.md").exists())
 
 
 if __name__ == "__main__":
