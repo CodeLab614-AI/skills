@@ -1,44 +1,31 @@
-"""Render reporte.md from facts and verified, save the branch state, prune stale states."""
+"""Render report.md and report.html from facts and verified; save the branch state."""
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from . import state
 from .detect import current_branch, find_base
 from .gitcmd import run_git
-from .labels import LABELS
+from .labels import LABELS, fill
 from .model import BlockedError
+from .report_html import MAX_LISTED, render_html
+from .richtext import code_md, one, strip_bold, to_markdown
+from .verify import UNEXPLAINED
 from .workspace import WORKDIR, remove_workfile, safe_write
 
-REPORT_REL = "reporte.md"
-UNGROUPED_ID = "ungrouped"
-KIND_ORDER = ["lockfile", "generated", "whitespace", "move", "repeated_replacement"]
+REPORT_REL = "report.md"
+REPORT_HTML_REL = "report.html"
 
-__all__ = ["LABELS", "render", "write_report", "resolve_labels"]
-
-
-def _one(value) -> str:
-    """Single-line text: every line break collapses to one space."""
-    return " ".join(str(value).splitlines())
-
-
-def _code(value) -> str:
-    """Inline code span whose fence is longer than any backtick run inside."""
-    text = _one(value)
-    longest = max([len(m) for m in re.findall(r"`+", text)] or [0])
-    fence = "`" * (longest + 1)
-    pad = " " if text.startswith("`") or text.endswith("`") else ""
-    return fence + pad + text + pad + fence
+__all__ = ["LABELS", "render", "summary_model", "write_report", "resolve_labels"]
 
 
 def resolve_labels(lang: str, override: Optional[Dict] = None) -> Dict[str, str]:
     labels = dict(LABELS["en"])
     labels.update(LABELS.get(lang, {}))
     labels.update(override or {})
-    return {k: _one(v) for k, v in labels.items()}
+    return {k: one(v) for k, v in labels.items()}
 
 
 def _read(repo: Path, rel: str) -> Dict:
@@ -52,192 +39,73 @@ def _read(repo: Path, rel: str) -> Dict:
     return data
 
 
-def _cite_loc(loc: Dict) -> str:
-    if "file" not in loc:
-        return str(loc.get("raw", "?"))
-    end = loc.get("end")
-    span = "%s" % loc.get("start") if end in (None, loc.get("start")) \
-        else "%s-%s" % (loc.get("start"), end)
-    side = "" if loc.get("side", "new") == "new" else " (old)"
-    return "%s:%s%s" % (loc["file"], span, side)
+def count_files(n: int, labels: Dict) -> str:
+    return fill(labels["count_files_one" if n == 1 else "count_files_many"], n=n)
 
 
-def _cite_line(ch: Dict) -> str:
-    side = "" if ch.get("side", "new") == "new" else " (old)"
-    return "%s:%s%s" % (ch.get("file"), ch.get("line"), side)
-
-
-def _rule_ref(rule: Dict) -> str:
-    return "%s:%s" % (rule.get("file"), rule.get("line"))
-
-
-def _mark(ok: bool, text: str, labels: Dict) -> str:
-    text = _code(text)
-    return text if ok else "%s ⚠ %s" % (text, labels["unverified_citation"])
-
-
-def _summary(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
-    t = facts.get("totals", {})
-    touched = [i for i in verified.get("rules") or []
-               if i.get("status") in ("complies", "seems_not")]
-    return [
-        "- %d %s (+%d / -%d)" % (t.get("files", 0), labels["files"],
-                                 t.get("additions", 0), t.get("deletions", 0)),
-        "- %d %s, %d %s" % (t.get("logic_lines", 0), labels["logic_lines"],
-                            t.get("mechanical_lines", 0), labels["mechanical_lines"]),
-        "- %d %s" % (len(touched), labels["rules_touched"]),
-    ]
-
-
-def _rules(verified: Dict, labels: Dict) -> List[str]:
-    items = verified.get("rules") or []
-    if not items:
-        return [labels["no_rules"]]
-    out: List[str] = []
-    for status in ("complies", "seems_not", "not_applicable"):
-        chosen = [i for i in items if i.get("status") == status]
-        if not chosen:
-            continue
-        out += ["### " + labels[status], ""]
-        for item in chosen:
-            rule = item.get("rule") or {}
-            line = "- " + _mark(bool(rule.get("verified")), _rule_ref(rule), labels)
-            changes = item.get("changes") or []
-            if changes:
-                refs = ", ".join(_mark(bool(c.get("verified")), _cite_line(c), labels)
-                                 for c in changes)
-                line += " → " + refs
-            if item.get("note"):
-                line += ": " + _one(item["note"])
-            out.append(line)
-        out.append("")
-    return out
-
-
-def _group_files(group: Dict, facts: Dict, hunks: Dict[str, Dict]) -> List[str]:
-    per: Dict[str, List[int]] = {}
-    for hid in group.get("hunk_ids") or []:
-        h = hunks.get(hid)
-        if h:
-            cell = per.setdefault(h["file"], [0, 0])
-            cell[0] += len(h.get("added") or [])
-            cell[1] += len(h.get("removed") or [])
-    by_path = {f["path"]: f for f in facts.get("files", [])}
-    for path in group.get("files") or []:
-        f = by_path.get(path, {})
-        per.setdefault(path, [f.get("additions", 0), f.get("deletions", 0)])
-    return ["- %s (+%d / -%d)" % (_code(p), a, d) for p, (a, d) in sorted(per.items())]
-
-
-def _groups(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
-    hunks = {h["id"]: h for h in facts.get("hunks", [])}
-    groups = sorted(verified.get("groups") or [], key=lambda g: (g.get("order", 0), g.get("id", "")))
-    out: List[str] = []
-    for g in groups:
-        name = labels["ungrouped"] if g.get("id") == UNGROUPED_ID or not g.get("name") \
-            else _one(g["name"])
-        out += ["### " + name, ""]
-        if g.get("what"):
-            out += [_one(g["what"]), ""]
-        out += _group_files(g, facts, hunks)
-        rules = sorted({_code(r) for hid in g.get("hunk_ids") or []
-                        for r in (hunks.get(hid) or {}).get("rules", [])})
-        if rules:
-            out.append("- %s: %s" % (labels["rules_label"], ", ".join(rules)))
-        if any((hunks.get(hid) or {}).get("changed_since_review")
-               for hid in g.get("hunk_ids") or []):
-            out.append("- **%s**" % labels["changed_since_review"])
-        out.append("")
-    return out
-
-
-def _mechanical(facts: Dict, labels: Dict) -> List[str]:
-    kinds: Dict[str, set] = {}
-    for h in facts.get("hunks", []):
-        if h.get("class") == "mechanical":
-            kinds.setdefault(h.get("mechanical_kind") or "whitespace", set()).add(h["file"])
-    for f in facts.get("files", []):
-        if f.get("class") == "mechanical" and not f.get("hunks"):
-            kinds.setdefault(f.get("mechanical_kind") or "whitespace", set()).add(f["path"])
-    reps = facts.get("replacements") or []
-    if reps:
-        kinds.setdefault("repeated_replacement", set())
-    out: List[str] = []
-    for kind in KIND_ORDER + sorted(k for k in kinds if k not in KIND_ORDER):
-        if kind not in kinds:
-            continue
-        out += ["### " + labels.get("kind_" + kind, kind), ""]
-        if kind == "repeated_replacement":
-            for rep in reps:
-                out.append("- %s → %s (%d %s)" % (
-                    _code(rep["old"]), _code(rep["new"]), len(rep.get("files") or []),
-                    labels["in_files"]))
-                for exc in rep.get("exceptions") or []:
-                    out.append("  - %s: %s" % (labels["exceptions"], _code(exc["file"])))
+def summary_model(facts: Dict, verified: Dict, labels: Dict) -> Dict:
+    """The conversation summary as data: the same text feeds report.md and report.html."""
+    total = (facts.get("totals") or {}).get("files", 0)
+    points = verified.get("points") or []
+    rest_files = 0
+    unexplained: List[str] = []
+    for group in (verified.get("rest") or {}).get("groups") or []:
+        paths = [f["path"] for f in group.get("files") or []]
+        if group.get("kind") == UNEXPLAINED:
+            unexplained = paths
         else:
-            out += ["- " + _code(p) for p in sorted(kinds[kind])]
-        out.append("")
-    return out
-
-
-def _unverified(verified: Dict, labels: Dict) -> List[str]:
-    out = []
-    for item in verified.get("unverified") or []:
-        c = item.get("citation") or {}
-        if item.get("kind") == "rule":
-            ref = _rule_ref(c)
-        elif item.get("kind") == "change":
-            ref = _cite_line(c)
-        else:
-            ref = _cite_loc(c)
-        out.append("- ⚠ %s: %s (%s)" % (labels["unverified_citation"], _code(ref),
-                                         _one(item.get("kind"))))
-    return out
-
-
-def _provenance(facts: Dict, verified: Dict, labels: Dict) -> List[str]:
-    rng = facts.get("range") or {}
-    spec = rng.get("spec") or {}
-    ex = facts.get("excluded") or {}
-    out = ["- %s: %s" % (labels["from"], _code(spec.get("from") or spec.get("from_commit") or spec.get("commit")
-                                              or rng.get("old"))),
-           "- %s: %s" % (labels["to"], _code(rng["new"]) if rng.get("new")
-                         else labels["working_tree"]),
-           "- merge-base: %s" % _code(rng.get("old")),
-           "- %s: %s" % (labels["excluded_merges"], ", ".join(_code(s[:10]) for s in ex.get("merges") or [])
-                         or labels["none"]),
-           "- %s: %s" % (labels["excluded_authors"], ", ".join(_code(a) for a in ex.get("authors") or [])
-                         or labels["none"])]
-    commits = facts.get("commits") or []
-    if commits:
-        out.append("- %s:" % labels["commits"])
-        out += ["  - %s %s" % (_code(c["sha"][:10]), _one(c.get("subject", "")))
-                for c in commits]
-        if facts.get("commits_truncated"):
-            out.append("  - " + labels["commits_truncated"])
-    if verified.get("interpreted_in") == "same_conversation":
-        out.append("- " + labels["same_conversation"])
-    return out
+            rest_files += len(paths)
+    if not total:
+        lead = labels["no_changes"]
+    elif not points:
+        lead = fill(labels["lead_none"], files=count_files(total, labels))
+    else:
+        key = "lead_one" if len(points) == 1 else "lead_many"
+        lead = fill(labels[key], files=count_files(total, labels), n=len(points))
+    rest = None
+    if rest_files:
+        line = one((verified.get("rest") or {}).get("line") or "")
+        rest = {"head": fill(labels["rest_head"], files=count_files(rest_files, labels)),
+                "line": line}
+    warnings = []
+    for w in verified.get("warnings") or []:
+        rule = fill(labels["warn_rule"], name="**%s**" % strip_bold(w["name"]), says=w["says"])
+        warnings.append({"text": "%s %s" % (one(w["change"]), one(rule)),
+                         "verified": bool(w.get("verified"))})
+    return {"lead": one(lead),
+            "points": [{"title": strip_bold(p["title"]), "line": one(p.get("line") or "")}
+                       for p in points],
+            "rest": rest,
+            "unexplained": ({"head": fill(labels["kind_unexplained"] + " ({files}):",
+                                          files=count_files(len(unexplained), labels)),
+                             "files": unexplained} if unexplained else None),
+            "warnings": warnings}
 
 
 def render(facts: Dict, verified: Dict, labels: Dict) -> str:
-    """Fixed order: summary, rules, logic groups, mechanical, unverified, provenance."""
-    parts: List[str] = ["# " + labels["title"], ""]
-
-    def section(head: str, body: List[str]) -> None:
-        parts.extend(["## " + head, ""] + body + ([""] if body and body[-1] != "" else []))
-
-    section(labels["h_summary"], _summary(facts, verified, labels))
-    section(labels["h_rules"], _rules(verified, labels))
-    section(labels["h_groups"], _groups(facts, verified, labels))
-    mech = _mechanical(facts, labels)
-    if mech:
-        section(labels["h_mechanical"], mech)
-    unv = _unverified(verified, labels)
-    if unv:
-        section(labels["h_unverified"], unv)
-    section(labels["h_provenance"], _provenance(facts, verified, labels))
-    return "\n".join(parts).rstrip("\n") + "\n"
+    """report.md: only the summary shown in the conversation."""
+    model = summary_model(facts, verified, labels)
+    out: List[str] = [model["lead"], ""]
+    for n, p in enumerate(model["points"], start=1):
+        out.append("%d. **%s** %s" % (n, to_markdown(p["title"]), to_markdown(p["line"])))
+    if model["points"]:
+        out.append("")
+    if model["rest"]:
+        out += ["**%s** %s" % (model["rest"]["head"], to_markdown(model["rest"]["line"])), ""]
+    un = model["unexplained"]
+    if un:
+        listed = [code_md(p) for p in un["files"][:MAX_LISTED]]
+        more = len(un["files"]) - MAX_LISTED
+        if more > 0:
+            listed.append(fill(labels["and_more"], n=more))
+        out += ["**%s** %s" % (un["head"], ", ".join(listed)), ""]
+    if model["warnings"]:
+        out += ["**%s**" % labels["warn_head"], ""]
+        for w in model["warnings"]:
+            mark = "" if w["verified"] else " ⚠ %s" % labels["unverified_citation"]
+            out.append("- %s%s" % (to_markdown(w["text"]), mark))
+        out.append("")
+    return "\n".join(out).rstrip("\n") + "\n"
 
 
 def _head(repo: Path) -> Optional[str]:
@@ -286,9 +154,10 @@ def write_report(repo: Path, lang: str, labels: Optional[Dict] = None) -> Dict:
     repo = Path(repo)
     facts = _read(repo, "run/facts.json")
     verified = _read(repo, "run/verified.json")
-    text = render(facts, verified, resolve_labels(lang, labels))
-    safe_write(repo, REPORT_REL, text)
+    resolved = resolve_labels(lang, labels)
     branch = current_branch(repo)
+    safe_write(repo, REPORT_REL, render(facts, verified, resolved))
+    safe_write(repo, REPORT_HTML_REL, render_html(facts, verified, resolved, branch, lang))
     state_path = None
     if branch:
         hunks = list(facts.get("hunks", []))
@@ -300,5 +169,6 @@ def write_report(repo: Path, lang: str, labels: Optional[Dict] = None) -> Dict:
         state_path = state.save_state(
             repo, branch, state.build_state(branch, _head(repo), hunks, files))
     notices = cleanup_stale_states(repo, branch)
-    return {"ok": True, "path": WORKDIR + "/" + REPORT_REL, "state_path": state_path,
+    return {"ok": True, "path": WORKDIR + "/" + REPORT_REL,
+            "html_path": WORKDIR + "/" + REPORT_HTML_REL, "state_path": state_path,
             "notices": notices}

@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .workspace import WORKDIR, safe_write
 
-STATE_DIR = "estado"
+STATE_DIR = "state"
 MAX_SAFE = 100  # keeps the file name far below filesystem limits
 
 

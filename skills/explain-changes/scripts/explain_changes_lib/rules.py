@@ -13,6 +13,19 @@ IMPORT_RE = re.compile(r"(?<![\w`])@([~./\w-][\w./-]*)")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 
+GENERIC_STEMS = {"rule", "rules", "skill", "readme", "index"}
+
+
+def rule_name(path: str) -> str:
+    """The user's name for a rule: its folder for ``.../preserve-comments/RULE.md``,
+    otherwise the file name without extension."""
+    pure = PurePosixPath(path)
+    stem = pure.stem.lstrip(".") or pure.name.lstrip(".")
+    if stem.lower() in GENERIC_STEMS and pure.parent.name:
+        return pure.parent.name
+    return stem
+
+
 def _inside(repo_real: str, real: str) -> bool:
     return real == repo_real or real.startswith(repo_real + os.sep)
 

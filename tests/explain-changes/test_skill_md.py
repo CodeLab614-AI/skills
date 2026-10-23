@@ -60,12 +60,31 @@ class SkillMdTests(unittest.TestCase):
         self.assertTrue(flags)
         self.assertEqual(sorted(flags - known), [])
 
-    def test_reporte_lists_every_english_label_key(self):
+    def test_report_format_lists_every_english_label_key(self):
         from explain_changes_lib.labels import LABELS
-        text = (SKILL_DIR / "references" / "reporte.md").read_text(encoding="utf-8")
+        text = (SKILL_DIR / "references" / "report-format.md").read_text(encoding="utf-8")
         section = text.split("## Label keys", 1)[1]
         keys = re.findall(r"^\| `([a-z_]+)` \|", section, re.M)
         self.assertEqual(sorted(keys), sorted(LABELS["en"].keys()))
+
+    def test_interpreter_schema_and_english_names(self):
+        _, body = _frontmatter(_read())
+        for key in ('"points"', '"rest"', '"warnings"', '"comments"', '"pos"', '"says"'):
+            self.assertIn(key, body, key)
+        for name in ("report.md", "report.html", "references/report-format.md",
+                     "references/rules.md", "references/mechanical.md"):
+            self.assertIn(name, body, name)
+        files = [p for p in SKILL_DIR.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
+        for path in files:
+            text = path.read_text(encoding="utf-8", errors="replace") if path.suffix != ".pyc" else ""
+            for old in ("reporte.md", "mecanico", "reglas.md", "estado/"):
+                self.assertNotIn(old, path.name + text, "%s in %s" % (old, path.name))
+
+    def test_summary_instructions(self):
+        _, body = _frontmatter(_read())
+        for needle in ("Do not add to it", "unverified citation", "anything", "read-only",
+                       "never an internal id"):
+            self.assertIn(needle, body, needle)
 
 
 if __name__ == "__main__":

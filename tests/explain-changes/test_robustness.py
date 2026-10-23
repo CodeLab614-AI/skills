@@ -44,7 +44,7 @@ class Utf8IoTests(RepoTestCase):
         proc = _raw(repo, "facts", "--from", "main", env=ASCII_ENV)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(json.loads(proc.stdout.decode("utf-8"))["ok"])
-        self.assertEqual(_raw(repo, "verify", stdin=b'{"groups": [], "rules": []}').returncode, 0)
+        self.assertEqual(_raw(repo, "verify", stdin=b'{"points": []}').returncode, 0)
         proc = _raw(repo, "report", "--lang", "es", env=ASCII_ENV)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(json.loads(proc.stdout.decode("utf-8"))["ok"])
@@ -81,7 +81,7 @@ class Utf8IoTests(RepoTestCase):
     def test_utf8_stdin_is_read_under_an_ascii_locale(self):
         repo = self._repo()
         self.assertEqual(_raw(repo, "facts", "--from", "main").returncode, 0)
-        self.assertEqual(_raw(repo, "verify", stdin=b'{"groups": [], "rules": []}').returncode, 0)
+        self.assertEqual(_raw(repo, "verify", stdin=b'{"points": []}').returncode, 0)
         labels = json.dumps({"summary": "Résumé \U0001F680"}, ensure_ascii=False)
         proc = _raw(repo, "report", "--lang", "es", "--labels-stdin",
                     stdin=labels.encode("utf-8"), env=ASCII_ENV)

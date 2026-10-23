@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -21,121 +22,141 @@ def small():
         "files": [
             {"path": "src/a.ts", "old_path": None, "status": "modified", "class": "logic",
              "mechanical_kind": None, "additions": 2, "deletions": 1, "hunks": ["h-1"],
+             "rules": ["R1"]},
+            {"path": "src/b.test.ts", "old_path": None, "status": "untracked", "class": "logic",
+             "mechanical_kind": None, "additions": 1, "deletions": 0, "hunks": ["h-2"],
              "rules": []},
             {"path": "pnpm-lock.yaml", "old_path": None, "status": "modified",
              "class": "mechanical", "mechanical_kind": "lockfile", "additions": 5,
              "deletions": 5, "hunks": [], "rules": []},
         ],
         "hunks": [{"id": "h-1", "file": "src/a.ts", "new_start": 3, "new_lines": 2,
-                   "old_start": 3, "old_lines": 1, "class": "logic", "rules": ["AGENTS.md:2"],
-                   "added": ["x", "y"], "removed": ["z"], "changed_since_review": True,
-                   "seen": False, "mechanical_kind": None}],
+                   "old_start": 3, "old_lines": 1, "class": "logic", "rules": ["R1"],
+                   "added": ["const x = 1;", "  return y;"], "removed": ["// old"],
+                   "changed_since_review": True, "seen": False, "mechanical_kind": None},
+                  {"id": "h-2", "file": "src/b.test.ts", "new_start": 1, "new_lines": 1,
+                   "old_start": 0, "old_lines": 0, "class": "logic", "rules": [],
+                   "added": ["test('a', () => {});"], "removed": [],
+                   "changed_since_review": False, "seen": False, "mechanical_kind": None}],
         "excluded": {"merges": ["b" * 40], "authors": ["bot@x.io"], "dropped_hunks": 0},
-        "rule_files": [], "replacements": [{"old": "foo", "new": "bar", "hunk_ids": [],
-                                           "files": ["a.ts", "b.ts", "c.ts"],
-                                           "exceptions": [{"file": "d.ts", "hunk_ids": ["h-9"]}]}],
-        "batches": [], "targets": [], "notices": [],
-        "commits": [{"sha": "c" * 40, "subject": "Arregla el login", "email": "me@x.io"}],
-        "commits_truncated": True,
-        "totals": {"files": 2, "additions": 7, "deletions": 6,
-                   "logic_lines": 3, "mechanical_lines": 10},
+        "rule_files": [], "replacements": [], "batches": [], "targets": [], "notices": [],
+        "commits": [], "commits_truncated": False,
+        "totals": {"files": 3, "additions": 8, "deletions": 6,
+                   "logic_lines": 4, "mechanical_lines": 10},
     }
     verified = {
         "interpreted_in": "same_conversation",
-        "groups": [{"id": "g1", "name": "Nombre del grupo", "what": "Hace algo.", "order": 1,
-                    "locations": [{"file": "src/a.ts", "start": 3, "end": 4, "side": "new",
-                                   "verified": False}], "hunk_ids": ["h-1"]}],
-        "rules": [{"rule": {"file": "AGENTS.md", "line": 2, "verified": True},
-                   "status": "complies", "changes": [
-                       {"file": "src/a.ts", "line": 3, "side": "new", "verified": True}],
-                   "note": "ok", "verified": True}],
-        "unverified": [{"kind": "location", "group": "g1",
-                        "citation": {"file": "nope.ts", "start": 1, "end": 2}}],
+        "points": [{"id": "p1", "order": 1, "title": "Nuevo `helper`",
+                    "line": "en `src/`: hace algo.", "more": "Más **detalle**.\n\nOtro párrafo.",
+                    "table": {"head": ["Parámetro", "Qué es"], "rows": [["`x`", "Un valor"]]},
+                    "files": [{"path": "src/a.ts", "verified": True}]}],
+        "rest": {"line": "pruebas y lockfile.", "groups": [
+            {"kind": "tests", "files": [{"path": "src/b.test.ts", "verified": True,
+                                         "mechanical_kind": None}]},
+            {"kind": "mechanical", "files": [{"path": "pnpm-lock.yaml", "verified": True,
+                                              "mechanical_kind": "lockfile"}]}]},
+        "warnings": [{"name": "preserve-comments", "says": "no borres comentarios",
+                      "change": "Se borró un comentario en `src/a.ts`.",
+                      "rule": {"file": ".agents/rules/preserve-comments/RULE.md", "line": 2,
+                               "verified": True, "text": "Keep comments."},
+                      "changes": [{"file": "src/a.ts", "line": 3, "side": "old",
+                                   "verified": True}], "verified": True}],
+        "comments": [{"file": "src/a.ts", "side": "new", "line": 3, "pos": "before",
+                      "text": "Declara `x`.\nSegunda línea."},
+                     {"file": "src/a.ts", "side": "new", "line": 4, "pos": "after",
+                      "text": "devuelve y"}],
+        "unverified": [], "dropped": [],
     }
     return facts, verified
 
 
 class RenderTests(unittest.TestCase):
-    def test_render_sections_order_es(self):
+    def test_markdown_is_the_conversation_summary(self):
         facts, verified = small()
-        labels = report.LABELS["es"]
-        text = report.render(facts, verified, labels)
-        order = [labels[k] for k in ("h_summary", "h_rules", "h_groups", "h_mechanical",
-                                     "h_unverified", "h_provenance")]
-        pos = [text.index("## " + h) for h in order]
-        self.assertEqual(pos, sorted(pos))
-        self.assertIn("⚠", text)
-        self.assertIn("nope.ts", text)
-        self.assertIn(labels["changed_since_review"], text)
-        self.assertIn(labels["same_conversation"], text)
-        self.assertIn("foo", text)
-        self.assertIn("d.ts", text)
-        self.assertIn("+2", text)
-        self.assertIn("bot@x.io", text)
+        text = report.render(facts, verified, report.LABELS["es"])
+        self.assertEqual(text, "\n".join([
+            "3 archivos, pero lo importante es 1 cosa:",
+            "",
+            "1. **Nuevo `helper`** en `src/`: hace algo.",
+            "",
+            "**Lo demás (2 archivos):** pruebas y lockfile.",
+            "",
+            "**Ojo con tus reglas:**",
+            "",
+            "- Se borró un comentario en `src/a.ts`. Tu regla **preserve-comments** dice: "
+            "«no borres comentarios».",
+            ""]))
+
+    def test_lead_variants(self):
+        facts, verified = small()
+        labels = report.LABELS["en"]
+        verified["points"] = verified["points"] * 2
+        self.assertTrue(report.render(facts, verified, labels).startswith(
+            "3 files, but what matters is 2 things:"))
+        verified["points"] = []
+        self.assertTrue(report.render(facts, verified, labels).startswith(
+            "3 files, with no logic changes to highlight."))
+        facts["totals"]["files"] = 1
+        self.assertTrue(report.render(facts, verified, labels).startswith("1 file, with"))
+        facts["totals"]["files"] = 0
+        verified["rest"] = {"line": "", "groups": []}
+        verified["warnings"] = []
+        self.assertEqual(report.render(facts, verified, labels),
+                         "There are no changes to explain.\n")
+
+    def test_no_warnings_means_no_warning_section(self):
+        facts, verified = small()
+        verified["warnings"] = []
+        text = report.render(facts, verified, report.LABELS["es"])
+        self.assertNotIn("Ojo con tus reglas", text)
+
+    def test_unverified_warning_is_marked_and_unexplained_is_listed(self):
+        facts, verified = small()
+        verified["warnings"][0]["verified"] = False
+        files = ["f%d.ts" % i for i in range(7)]
+        verified["rest"]["groups"].append(
+            {"kind": "unexplained", "files": [{"path": p, "verified": True} for p in files]})
+        text = report.render(facts, verified, report.LABELS["es"])
+        self.assertIn("⚠ cita no verificada", text)
+        self.assertIn("**Sin agrupar (7 archivos):** `f0.ts`, `f1.ts`, `f2.ts`, `f3.ts`, "
+                      "`f4.ts`, y 2 más", text)
+        self.assertIn("**Lo demás (2 archivos):**", text)  # unexplained files are not "the rest"
 
     def test_user_text_cannot_break_structure(self):
         facts, verified = small()
-        facts["files"][0]["path"] = "src/we`ird\n## Injected.ts"
-        facts["hunks"][0]["file"] = facts["files"][0]["path"]
-        facts["replacements"][0]["old"] = "a``b\n# H"
-        verified["groups"][0]["name"] = "# Fake\n## Heading"
-        verified["groups"][0]["what"] = "line1\n## Sneaky"
-        verified["rules"][0]["note"] = "x\r\n## Note"
-        verified["unverified"][0]["citation"]["file"] = "bad\n## Cite`.ts"
+        verified["points"][0]["title"] = "# Fake\n## Heading **x**"
+        verified["points"][0]["line"] = "line1\n## Sneaky `a``b`"
+        verified["warnings"][0]["change"] = "x\r\n## Note"
+        verified["rest"]["line"] = "a\n# H"
         text = report.render(facts, verified, report.LABELS["en"])
-        heads = [l for l in text.split("\n") if l.startswith("#")]
-        self.assertEqual(heads, [
-            "# Change report", "## Summary", "## Rules", "### Complies", "## Logic changes",
-            "### # Fake ## Heading", "## Mechanical changes", "### Lockfiles",
-            "### Repeated replacements", "## Unverified citations", "## Provenance"])
-        self.assertIn("``we`ird ## Injected.ts``", text.replace("`src/", "``"))
-        self.assertIn("```a``b # H```", text)
+        self.assertFalse([l for l in text.split("\n") if l.startswith("#")])
+        self.assertIn("1. **# Fake ## Heading x**", text)
+        self.assertEqual(text.count("\n\n"), 4)
 
-    def test_provenance_lists_commits(self):
+    def test_no_internal_ids_in_markdown(self):
         facts, verified = small()
-        text = report.render(facts, verified, report.LABELS["en"])
-        self.assertIn("`cccccccccc` Arregla el login", text)
-        self.assertIn(report.LABELS["en"]["commits_truncated"], text)
-        facts["commits_truncated"] = False
-        text = report.render(facts, verified, report.LABELS["en"])
-        self.assertNotIn(report.LABELS["en"]["commits_truncated"], text)
-
-    def test_no_rules_section_says_so(self):
-        facts, verified = small()
-        verified["rules"] = []
-        text = report.render(facts, verified, report.LABELS["en"])
-        self.assertIn(report.LABELS["en"]["no_rules"], text)
-        self.assertNotIn(report.LABELS["en"]["same_conversation"] + "x", text)
-
-    def test_not_same_conversation_omits_label(self):
-        facts, verified = small()
-        verified["interpreted_in"] = "subagent"
         text = report.render(facts, verified, report.LABELS["es"])
-        self.assertNotIn(report.LABELS["es"]["same_conversation"], text)
-
-    def test_ungrouped_group_renders(self):
-        facts, verified = small()
-        verified["groups"].append({"id": "ungrouped", "name": None, "what": "", "order": 999,
-                                   "locations": [], "hunk_ids": [], "files": ["src/a.ts"]})
-        text = report.render(facts, verified, report.LABELS["es"])
-        self.assertIn(report.LABELS["es"]["ungrouped"], text)
+        self.assertNotRegex(text, r"\bR\d+\b")
+        self.assertNotIn("h-1", text)
 
     def test_label_keys_match(self):
         self.assertEqual(set(report.LABELS["en"]), set(report.LABELS["es"]))
 
     def test_label_keys_are_all_used_and_documented(self):
-        import re
         from helpers import ROOT
         base = ROOT / "skills" / "explain-changes"
-        source = (base / "scripts" / "explain_changes_lib" / "report.py").read_text(
-            encoding="utf-8")
-        used = set(re.findall(r'labels\["(\w+)"\]', source))
-        used |= {"complies", "seems_not", "not_applicable"}  # labels[status]
-        used |= {k for k in report.LABELS["en"] if k.startswith("kind_")}  # "kind_" + kind
+        lib = base / "scripts" / "explain_changes_lib"
+        source = "".join((lib / name).read_text(encoding="utf-8")
+                         for name in ("report.py", "report_html.py"))
+        used = {k for k in report.LABELS["en"] if '"%s"' % k in source or k.startswith("kind_")}
         self.assertEqual(set(report.LABELS["en"]), used)
-        doc = (base / "references" / "reporte.md").read_text(encoding="utf-8")
+        doc = (base / "references" / "report-format.md").read_text(encoding="utf-8")
         documented = set(re.findall(r"^\| `(\w+)` \|", doc, re.M))
         self.assertEqual(documented, used)
+
+    def test_fill_leaves_foreign_braces_alone(self):
+        from explain_changes_lib.labels import fill
+        self.assertEqual(fill("{a} {b} {c}", a="{b}", b="x"), "{b} x {c}")
 
 
 class WriteReportTests(RepoTestCase):
@@ -143,7 +164,7 @@ class WriteReportTests(RepoTestCase):
         code, data = run_script(repo, "facts", "--from", "main")
         self.assertEqual(code, 0, data)
         code, data = run_script(repo, "verify",
-                                stdin=json.dumps(interp or {"groups": []}))
+                                stdin=json.dumps(interp or {"points": []}))
         self.assertEqual(code, 0, data)
         return run_script(repo, "report", "--lang", "es")
 
@@ -158,24 +179,25 @@ class WriteReportTests(RepoTestCase):
 
     def test_previous_report_replaced(self):
         repo = self.feature("first\n")
-        code, data = self.pipeline(repo)
+        interp = {"points": [{"title": "T", "files": ["a.txt"]}]}
+        code, data = self.pipeline(repo, interp)
         self.assertEqual(code, 0, data)
         self.assertTrue(data["ok"])
         repo.write("second.txt", "s\n")
         repo.commit("again")
-        first = (repo.path / ".explain-changes" / "reporte.md").read_text(encoding="utf-8")
-        self.assertNotIn("second.txt", first)
-        code, data = self.pipeline(repo)
-        self.assertEqual(code, 0, data)
         work = repo.path / ".explain-changes"
-        reports = [p for p in work.rglob("reporte*")]
-        self.assertEqual([p.name for p in reports], ["reporte.md"])
-        text = reports[0].read_text(encoding="utf-8")
-        self.assertIn("second.txt", text)
-        self.assertEqual(data["path"], ".explain-changes/reporte.md")
-        self.assertTrue(data["state_path"].startswith(".explain-changes/estado/"))
+        self.assertNotIn("second.txt", (work / "report.html").read_text(encoding="utf-8"))
+        interp["points"][0]["files"].append("second.txt")
+        code, data = self.pipeline(repo, interp)
+        self.assertEqual(code, 0, data)
+        reports = sorted(p.name for p in work.rglob("report*"))
+        self.assertEqual(reports, ["report.html", "report.md"])
+        self.assertIn("second.txt", (work / "report.html").read_text(encoding="utf-8"))
+        self.assertEqual(data["path"], ".explain-changes/report.md")
+        self.assertEqual(data["html_path"], ".explain-changes/report.html")
+        self.assertTrue(data["state_path"].startswith(".explain-changes/state/"))
 
-    def test_real_pipeline_rules_and_unverified(self):
+    def test_real_pipeline_warnings_and_unverified(self):
         repo = self.make_repo()
         repo.write("AGENTS.md", "# rules\nbe kind\nbe brief\nbe clear\nbe fast\n")
         repo.write("a.txt", "base\n")
@@ -183,24 +205,20 @@ class WriteReportTests(RepoTestCase):
         repo.checkout("feat", create=True)
         repo.write("a.txt", "base\nnew\n")
         repo.commit("change")
-        rule = lambda n, st: {"rule": {"file": "AGENTS.md", "line": n}, "status": st,
-                              "changes": [{"file": "a.txt", "line": 2}], "note": "n%d" % n}
-        interp = {"groups": [{"id": "g", "name": "G", "what": "w", "order": 1,
-                              "locations": [{"file": "a.txt", "start": 2, "end": 2},
-                                            {"file": "ghost.txt", "start": 1, "end": 1}]}],
-                  "rules": [rule(2, "complies"), rule(3, "seems_not"),
-                            rule(4, "not_applicable"), rule(99, "complies")]}
+        warn = lambda n: {"says": "be kind", "change": "Algo pasó.", "name": "kindness",
+                          "rule": {"file": "AGENTS.md", "line": n},
+                          "changes": [{"file": "a.txt", "line": 2}]}
+        interp = {"points": [{"title": "Nuevo", "line": "l", "files": ["a.txt"]}],
+                  "warnings": [warn(2), warn(99)]}
         code, data = self.pipeline(repo, interp)
         self.assertEqual(code, 0, data)
-        text = (repo.path / ".explain-changes" / "reporte.md").read_text(encoding="utf-8")
-        self.assertIn("- 3 reglas tocadas", text)
-        self.assertIn("### Cumple", text)
-        self.assertIn("### Parece no cumplir", text)
-        self.assertIn("### No aplica", text)
-        self.assertIn("## Citas no verificadas", text)
-        self.assertIn("ghost.txt", text)
-        self.assertIn("AGENTS.md:99", text)
-        self.assertIn("⚠", text)
+        text = (repo.path / ".explain-changes" / "report.md").read_text(encoding="utf-8")
+        self.assertIn("1 archivo, pero lo importante es 1 cosa:", text)
+        self.assertEqual(text.count("Tu regla **kindness** dice: «be kind»."), 2)
+        self.assertEqual(text.count("⚠ cita no verificada"), 1)
+        self.assertNotIn("AGENTS.md", text)
+        html = (repo.path / ".explain-changes" / "report.html").read_text(encoding="utf-8")
+        self.assertIn("AGENTS.md:99", html)
 
     def test_stale_state_cleanup(self):
         repo = self.feature()
@@ -219,7 +237,7 @@ class WriteReportTests(RepoTestCase):
         repo.checkout("main")
         repo.git("merge", "-q", "--ff-only", "merged")
         repo.checkout("feat")
-        junk = repo.path / ".explain-changes" / "estado" / "junk.json"
+        junk = repo.path / ".explain-changes" / "state" / "junk.json"
         junk.write_text("not json")
         code, data = self.pipeline(repo)
         self.assertEqual(code, 0, data)
@@ -227,10 +245,10 @@ class WriteReportTests(RepoTestCase):
         self.assertIsNone(load_state(repo.path, "merged"))
         self.assertIsNotNone(load_state(repo.path, "feat"))
         self.assertTrue(junk.exists())
-        files = sorted(p.name for p in (repo.path / ".explain-changes" / "estado").iterdir())
+        files = sorted(p.name for p in (repo.path / ".explain-changes" / "state").iterdir())
         self.assertEqual(len(files), 2, files)
         manifest = json.loads((repo.path / ".explain-changes" / ".manifest.json").read_text())
-        self.assertEqual(len([f for f in manifest["files"] if f.startswith("estado/")]), 1)
+        self.assertEqual(len([f for f in manifest["files"] if f.startswith("state/")]), 1)
 
     def test_only_new_keeps_previous_hunks_in_state(self):
         repo = self.feature("first\n")
@@ -239,7 +257,7 @@ class WriteReportTests(RepoTestCase):
         repo.commit("more")
         code, data = run_script(repo, "facts", "--from", "main", "--only-new")
         self.assertEqual(code, 0, data)
-        run_script(repo, "verify", stdin='{"groups": []}')
+        run_script(repo, "verify", stdin='{"points": []}')
         self.assertEqual(run_script(repo, "report", "--lang", "en")[0], 0)
         state = load_state(repo.path, "feat")
         self.assertEqual(len(state["hunks"]), 2)
@@ -250,17 +268,17 @@ class WriteReportTests(RepoTestCase):
         code, data = self.pipeline(repo)
         self.assertEqual(code, 0, data)
         self.assertIsNone(data["state_path"])
-        self.assertTrue((repo.path / ".explain-changes" / "reporte.md").exists())
+        self.assertTrue((repo.path / ".explain-changes" / "report.md").exists())
 
     def test_labels_override_and_bad_input(self):
         repo = self.feature()
         run_script(repo, "facts", "--from", "main")
-        run_script(repo, "verify", stdin='{"groups": []}')
+        run_script(repo, "verify", stdin='{"points": []}')
         code, data = run_script(repo, "report", "--lang", "fr", "--labels-stdin",
-                                stdin=json.dumps({"h_summary": "Résumé"}))
+                                stdin=json.dumps({"lead_none": "{files} : rien de plus"}))
         self.assertEqual(code, 0, data)
-        text = (repo.path / ".explain-changes" / "reporte.md").read_text(encoding="utf-8")
-        self.assertIn("## Résumé", text)
+        text = (repo.path / ".explain-changes" / "report.md").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("1 file : rien de plus\n"))
         code, data = run_script(repo, "report", "--lang", "es", "--labels-stdin",
                                 stdin="{nope")
         self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
@@ -271,7 +289,7 @@ class WriteReportTests(RepoTestCase):
     def test_report_without_flag_ignores_stdin(self):
         repo = self.feature()
         run_script(repo, "facts", "--from", "main")
-        run_script(repo, "verify", stdin='{"groups": []}')
+        run_script(repo, "verify", stdin='{"points": []}')
         proc = subprocess.Popen([sys.executable, str(helpers.SCRIPT), "report", "--lang", "es"],
                                 cwd=repo.path, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -351,8 +369,8 @@ class WriteReportTests(RepoTestCase):
         self.addCleanup(os.chmod, exclude, 0o644)
         code, data = run_script(repo, "report", "--lang", "es")
         self.assertEqual((code, data["error"]["code"]), (2, "not_excluded"), data)
-        self.assertFalse((repo.path / ".explain-changes" / "reporte.md").exists())
-        self.assertFalse((repo.path / ".explain-changes" / "estado").exists())
+        self.assertFalse((repo.path / ".explain-changes" / "report.md").exists())
+        self.assertFalse((repo.path / ".explain-changes" / "state").exists())
 
 
 if __name__ == "__main__":
