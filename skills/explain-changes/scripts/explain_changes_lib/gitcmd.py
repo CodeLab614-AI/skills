@@ -7,6 +7,8 @@ import threading
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
 
+from .diskpath import fs_str
+
 SAFE_ENV = {
     "GIT_OPTIONAL_LOCKS": "0",
     "LC_ALL": "C",
@@ -46,7 +48,7 @@ def run_git(repo: Path, args: List[str], check: bool = True, timeout: int = 60,
     env = _env()
     try:
         proc = subprocess.run(
-            ["git", *SAFE_OPTS, *args], cwd=str(repo), env=env, input=stdin,
+            ["git", *SAFE_OPTS, *map(fs_str, args)], cwd=str(repo), env=env, input=stdin,
             stdin=None if stdin is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
         )

@@ -49,6 +49,25 @@ class Utf8IoTests(RepoTestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(json.loads(proc.stdout.decode("utf-8"))["ok"])
 
+    def test_non_ascii_paths_reach_the_disk_under_an_ascii_locale(self):
+        repo = self.make_repo("main")
+        repo.write("a.txt", "a\n")
+        repo.commit("init")
+        repo.checkout("feature", create=True)
+        repo.write("café/AGENTS.md", "rule @réglas.md\n")
+        repo.write("café/réglas.md", "more\n")
+        repo.write("café/日本.txt", "x\n")
+        repo.commit("add non-ascii files")
+        repo.write("café/nuevo.txt", "untracked\n")
+        proc = _raw(repo, "facts", "--from", "main", "--include-uncommitted", env=ASCII_ENV)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        data = json.loads(proc.stdout.decode("utf-8"))
+        self.assertTrue(data["ok"], data)
+        facts = json.loads((repo.path / FACTS).read_text(encoding="utf-8"))
+        self.assertIn("café/AGENTS.md", json.dumps(facts, ensure_ascii=False))
+        self.assertIn("café/réglas.md", json.dumps(facts, ensure_ascii=False))
+        self.assertIn("café/nuevo.txt", json.dumps(facts, ensure_ascii=False))
+
     def test_non_utf8_stdin_is_bad_input(self):
         repo = self._repo()
         self.assertEqual(_raw(repo, "facts", "--from", "main").returncode, 0)

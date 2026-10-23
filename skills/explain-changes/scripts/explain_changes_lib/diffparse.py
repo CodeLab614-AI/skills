@@ -8,6 +8,7 @@ import stat
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .diskpath import on_disk
 from .gitcmd import run_git
 from .model import FileChange, Hunk
 
@@ -182,7 +183,7 @@ def _hash_worktree(repo: Path, path: str) -> Optional[str]:
 
 def _disk_size(repo: Path, path: str) -> int:
     try:
-        return os.lstat(repo / path).st_size
+        return os.lstat(on_disk(repo, path)).st_size
     except OSError:
         return 0
 
@@ -296,7 +297,7 @@ def untracked_files(repo: Path, notices: Optional[List[Dict]] = None) -> List[Fi
         if path.endswith("/"):
             _skipped(notices, path, "nested_repo")
             continue
-        full = repo / path
+        full = on_disk(repo, path)
         is_link = os.path.islink(full)
         try:
             st = os.lstat(full)

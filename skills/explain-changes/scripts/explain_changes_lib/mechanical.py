@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+from .diskpath import on_disk
 from .gitcmd import blob_heads, run_git
 from .model import FileChange, Hunk
 
@@ -121,7 +122,7 @@ def _head_lines(repo: Path, fc: FileChange, blob_heads: Optional[Dict[str, bytes
         data = (blob_heads or {}).get(fc.new_blob, b"")[:HEAD_BYTES]
     if not data:
         try:
-            with open(repo / fc.path, "rb") as fh:
+            with open(on_disk(repo, fc.path), "rb") as fh:
                 data = fh.read(HEAD_BYTES)
         except OSError:
             return []

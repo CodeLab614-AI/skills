@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import rules, state
+from .diskpath import on_disk
 from .gitcmd import git_text, run_git
 from .model import BlockedError
 
@@ -264,7 +265,7 @@ def diff_size(repo: Path, mb: Optional[str], extra_paths: List[str],
             paths.add(name)
         lines += (int(add) if add.isdigit() else 0) + (int(dele) if dele.isdigit() else 0)
     for name in untracked:
-        lines += _count_lines(repo / name)
+        lines += _count_lines(on_disk(repo, name))
     return {"files": len(paths), "lines": lines}, sorted(paths)
 
 

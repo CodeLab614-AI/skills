@@ -6,6 +6,8 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional
 
+from .diskpath import from_disk, on_disk
+
 MAX_IMPORT_DEPTH = 5
 IMPORT_RE = re.compile(r"(?<![\w`])@([~./\w-][\w./-]*)")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -18,7 +20,7 @@ def _inside(repo_real: str, real: str) -> bool:
 def _resolve(repo: Path, rel: str) -> Optional[Path]:
     """Return the real file for a repo-relative path, or None if not a safe file."""
     repo_real = os.path.realpath(repo)
-    real = os.path.realpath(os.path.join(repo_real, rel))
+    real = os.path.realpath(on_disk(repo_real, rel))
     if not _inside(repo_real, real) or not os.path.isfile(real):
         return None
     return Path(real)
@@ -53,7 +55,7 @@ def _tree_files(repo: Path, top: str) -> List[str]:
     for dirpath, _dirs, files in os.walk(root, followlinks=False):
         for name in files:
             rel = os.path.relpath(os.path.join(dirpath, name), str(repo))
-            found.append(PurePosixPath(*rel.split(os.sep)).as_posix())
+            found.append(PurePosixPath(*from_disk(rel).split(os.sep)).as_posix())
     return sorted(found)
 
 
@@ -81,7 +83,7 @@ def _resolve_import(repo: Path, importer: str, target: str) -> Optional[str]:
     real = _resolve(repo, rel)
     if real is None:
         return None
-    out = os.path.relpath(str(real), os.path.realpath(repo)).replace(os.sep, "/")
+    out = from_disk(os.path.relpath(str(real), os.path.realpath(repo))).replace(os.sep, "/")
     parts = out.split("/")
     if ".git" in parts or parts[-1].startswith(".env"):
         return None
