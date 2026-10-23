@@ -1,13 +1,15 @@
 # explain-changes: usage guide
 
-`explain-changes` explains the changes on your current Git branch group by group and writes a report. You run it yourself (for example `/explain-changes`); it never starts on its own. It speaks the language of your conversation: the questions, the walkthrough and the report come out in that language.
+`explain-changes` tells you, in under two minutes, what the AI did on your current Git branch. You already know what you planned; this shows you what actually happened. You run it yourself (for example `/explain-changes`); it never starts on its own. It speaks the language of your conversation: the questions, the summary, the reports and the comments inside the code come out in that language.
 
 ## What it does
 
-- Groups the changes by intent and says what each group does, with `file:line` citations.
+- Writes a short summary in the conversation: "N files, but what matters is X things:" and a numbered list (about 5 at most), each with a bold title and one or two lines about what was done and where. Important means new reusable pieces (helper, hook, component, function), behavior changes, props, parameters, returns or exports that change or disappear, and new configuration or dependencies. Tests, stories, docs, exports in an index, follow-up cleanup and mechanical changes go in a single line: "The rest (N files)".
+- Adds "Watch your rules:" only when a rule of your project (`AGENTS.md`, `CLAUDE.md`, `.cursor/rules/**` and similar) seems not to be met: the concrete change and "Your rule <name> says: «...»". Rules that are met or do not apply are not mentioned, and no internal ids appear.
+- Writes `.explain-changes/report.md` (that same summary) and `.explain-changes/report.html` (one self-contained file, no internet needed, light and dark mode) where each point opens to a longer explanation, a table when it helps and its code, highlighted like an editor, with explanations for a junior developer written inside the code (in their own color, marked as not being in your code).
 - Separates mechanical changes (lockfiles, generated files, whitespace-only edits, moved code, repeated replacements) from logic, deterministically. When in doubt, a change counts as logic.
-- Crosses each change with your project rules (`AGENTS.md`, `CLAUDE.md`, `.cursor/rules/**` and similar) and says which rules it touches and whether they seem to be met.
-- Checks every citation against the real diff. A citation that cannot be confirmed is marked as unverified, never presented as fact.
+- Checks every file, rule line, cited line and code comment against the real diff. What cannot be confirmed is dropped (comments) or marked as unverified and shown without code, never presented as fact. Files the AI did not place in a point are never hidden: they show up as "not grouped".
+- Then asks whether you want something explained. You can ask about any file, helper, hook, function or point; the agent reads the code (read-only) and explains it in detail.
 - Leaves out what came from the base branch, from other people's merged branches and from other authors, if you choose so. Nothing of yours is hidden: when in doubt, it is included. A change of file mode (for example making a script executable) is always shown as logic, even next to a whitespace edit, and a file the script cannot read (a nested repository or an unreadable file) is reported in a notice instead of being silently dropped.
 
 ## What it does not do
@@ -29,17 +31,24 @@ The heredoc examples in the skill assume a POSIX shell (bash, zsh). On Windows P
 1. **Detect.** The script inspects the repo: branch, base branch, your commits, merged branches that are not yours, other authors' commits, uncommitted changes, the last review and the rule files found.
 2. **Questions.** Only the ones that apply: what to review (the whole branch, only what is new since your last review, from a commit you choose, only uncommitted work, or the commit that merged or squashed the branch), whether to leave out merged branches that are not yours, and whether to leave out other authors' commits. A question with a single possible answer is not asked. Then one summary line: what is reviewed, against which base and how many rules were found.
 3. **Facts.** The agent turns your rules into structured targets and the script computes the diff against the merge-base, classifies mechanical against logic, applies the rule targets and splits very large changes into batches.
-4. **Interpretation.** An isolated interpreter (a fresh subagent where the agent supports it; otherwise the same conversation, and the report says so) groups the logic changes, orders them for reading and relates them to the rules.
-5. **Verify and report.** The script verifies every citation, adds any logic that was not grouped to an "Ungrouped" group so nothing is lost, and writes `.explain-changes/reporte.md`.
-6. **Walkthrough.** A summary first, then group by group, with the options **Next** / **Explain more** / **Show me the code**. Mechanical changes are shown together in one step.
+4. **Interpretation.** An isolated interpreter (a fresh subagent where the agent supports it; otherwise the same conversation, and the report says so) picks the points that matter, groups the rest, finds the rules that seem not to be met and writes the explanatory comments for the code.
+5. **Verify and report.** The script verifies every citation and comment, places any file that was left out in "not grouped" so nothing is lost, and writes `report.md` and `report.html`.
+6. **Summary and questions.** The agent shows the summary, says where both reports are and asks whether you want anything explained.
 
-## Example of a walkthrough step
+## Example of the summary
 
 ```
-Group 2 of 4: Page size from screen height
-  Files: getInfinitePageSize.ts (new, +21), useInfiniteScroll.ts (+38 -1)
-  What it does: computes how many rows fit on screen and asks the server for that many
-  Rules: .agents/rules/hooks.md:8 "hooks live in use*.ts files" -> complies
+49 files, but what matters is 3 things:
+
+1. **New reusable helper `getTotal`** in `src/helpers/`: adds up the prices of a cart.
+2. **`useCart` now uses it:** the cart views pass the price list and the total updates by itself.
+3. **The discount selector was removed from `CartSummary`**: its 3 props disappear.
+
+**The rest (46 files):** tests and stories adjusted, exports in `index.ts`, docs.
+
+**Watch your rules:**
+
+- Two comments were deleted along with the old selector. Your rule **preserve-comments** says: «do not delete comments when refactoring».
 ```
 
 ## What is written, and where
@@ -48,9 +57,10 @@ Everything lives in `.explain-changes/` at the root of the repo:
 
 | Path | Content |
 |---|---|
-| `reporte.md` | The report. Overwritten on every run. |
+| `report.md` | The summary, identical to the one in the conversation. Overwritten on every run. |
+| `report.html` | The same summary plus the code of every point, closed until you open it. Overwritten on every run. |
 | `run/` | Working files of the current run (`facts.json`, `verified.json`). |
-| `estado/<branch>-<hash>.json` | Per-branch state: last reviewed commit and fingerprints of reviewed changes. Kept between runs. |
+| `state/<branch>-<hash>.json` | Per-branch state: last reviewed commit and fingerprints of reviewed changes. Kept between runs. |
 
 Before writing, the script adds `/.explain-changes/` to `.git/info/exclude` (a local file, never committed) and confirms with `git check-ignore` that it is excluded. If it cannot guarantee that, it writes nothing (see `not_excluded`). Each run removes only the files the skill itself created earlier, and removes the state of branches that no longer exist or are already merged into the base. Your tracked and untracked files are never touched, and nothing is ever committed.
 
@@ -65,7 +75,7 @@ Lockfiles, generated files, moved files, repeated token replacements and whitesp
 
 ## Only what is new
 
-When there is a previous review of the branch and new commits since, the first question offers "only what is new". Changes after the last reviewed commit, plus uncommitted work, are shown; a group that touches something you already reviewed is marked "changed since your last review". If you rewrote history (rebase, amend), what is new is detected by content instead, and you are told so.
+When there is a previous review of the branch and new commits since, the first question offers "only what is new". Changes after the last reviewed commit, plus uncommitted work, are shown. If you rewrote history (rebase, amend), what is new is detected by content instead, and you are told so.
 
 ## Troubleshooting
 
