@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from teach_me_lib import dossier  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -39,6 +40,23 @@ def _read_stdin_json():
         raise BlockedError("bad_input", "Standard input is not valid JSON.")
 
 
+def _cmd_lookup(args) -> dict:
+    return dossier.lookup(args.url)
+
+
+def _cmd_list(args) -> dict:
+    return {"ok": True, "dossiers": dossier.list_all()}
+
+
+def _cmd_init(args) -> dict:
+    custom = _read_stdin_json() if args.names_stdin else None
+    return dossier.init(args.url, args.lang, args.mode, custom)
+
+
+def _cmd_add_root(args) -> dict:
+    return dossier.add_root(args.id, args.url)
+
+
 def _emit(payload: dict, code: int = 0) -> int:
     try:
         sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -62,6 +80,24 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _register() -> None:
+    COMMANDS["lookup"] = (lambda p: p.add_argument("url"), _cmd_lookup)
+    COMMANDS["list"] = (lambda p: None, _cmd_list)
+
+    def cfg_init(p):
+        p.add_argument("url")
+        p.add_argument("--lang", required=True)
+        p.add_argument("--mode", choices=dossier.MODES, default="use")
+        p.add_argument("--names-stdin", action="store_true")
+
+    def cfg_add_root(p):
+        p.add_argument("id")
+        p.add_argument("url")
+
+    COMMANDS["init"] = (cfg_init, _cmd_init)
+    COMMANDS["add-root"] = (cfg_add_root, _cmd_add_root)
+
+
 def main(argv=None) -> int:
     _setup_io()
     try:
@@ -76,6 +112,8 @@ def main(argv=None) -> int:
             message = exc.__class__.__name__
         return _emit({"ok": False, "error": {"code": "internal_error", "message": message}}, 1)
 
+
+_register()
 
 if __name__ == "__main__":
     sys.exit(main())
