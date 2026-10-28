@@ -224,7 +224,7 @@ def _write_pages(docs_dir: Path, pages: list) -> None:
 
 
 def _file_name(url: str) -> str:
-    stem = re.sub(r"[^\w.\-~%@+,=:!$&'()*;]", "_", urls.normalize(url).replace("/", "__"))
+    stem = re.sub(r"[^A-Za-z0-9._~@+,=-]", "_", urls.normalize(url).replace("/", "__"))
     name = stem + ".md"
     if len(name) > MAX_NAME:
         digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:10]

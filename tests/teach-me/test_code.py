@@ -104,6 +104,23 @@ class ExtractTests(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertTrue((code_root(did) / "ai_7.0.155" / "README.md").is_file())
 
+    def test_label_used_is_stored_for_sources_and_search(self):
+        from teach_me_lib import search, sources
+        routes = {"/acme/lib/tar.gz/ai@7.0.155": route(tarball(BASIC))}
+        with FixtureServer(routes) as srv, TempHome():
+            did = setup(srv)
+            code, out = fetch(srv, did, ref="ai@7.0.155")
+            self.assertEqual(code, 0, out)
+            meta, _ = dossier.load(did)
+            self.assertEqual(meta["version"]["label"], "ai_7.0.155")
+            claims = [{"text": "x", "kind": "fact", "sources": [
+                {"kind": "code", "path": "src/a.py", "line_start": 1, "line_end": 2}]}]
+            resolved, unverified = sources.check_claims(did, claims)
+            self.assertEqual(unverified, [])
+            self.assertIn("x = 1", resolved[0]["sources"][0]["excerpt"])
+            res = search.query(did, "x = 1")
+            self.assertTrue(any(r["citation"].get("kind") == "code" for r in res["results"]))
+
     def test_not_found_is_fetch_failed(self):
         with FixtureServer({}) as srv, TempHome():
             did = setup(srv)

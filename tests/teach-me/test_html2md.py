@@ -24,6 +24,13 @@ class Html2MdTests(unittest.TestCase):
         self.assertIn("| k | v |", out)
         self.assertIn("| a | 1 |", out)
 
+    def test_blank_line_after_list(self):
+        out = html2md.convert("<ul><li>a</li><li>b</li></ul>"
+                              "<table><tr><th>k</th></tr><tr><td>1</td></tr></table><p>after</p>")
+        self.assertIn("- b\n\n| k |", out)
+        out = html2md.convert("<ul><li>a</li></ul><p>para</p>")
+        self.assertIn("- a\n\npara", out)
+
     def test_drops_scripts_and_nav(self):
         html = (
             "<header>HEAD</header><nav>NAV<nav>inner</nav>after-inner</nav>"

@@ -106,12 +106,20 @@ Exam: Expiring entries (attempt 1)
    Missing: it is removed lazily, on the next read, not at the moment it expires.
    Reference: "Expired entries are deleted on access." Source: docs/expiry (https://tiny-cache.example/docs/expiry)
 
-3. ✅ 80%   When would you use `get` and when `peek`?
+3. ✅ 60%   What does `cache.get("a")` return if `"a"` expired a minute ago?
+   Right: `undefined`, not an error.
+   Missing: the expired entry is deleted by that same call.
+   Reference: "Expired entries are deleted on access." Source: docs/expiry (https://tiny-cache.example/docs/expiry)
+
+4. ✅ 80%   When would you use `get` and when `peek`?
    Right: `peek` does not refresh the entry.
    Missing: `get` also extends the lifetime when `refresh` is on.
    Reference: src/cache.ts:42-58
 
-Score: 73% (average of 3 questions). Passed.
+5. ⏭️ Skipped  Read `Cache.sweep` in src/cache.ts yourself and say what it does.
+   You read this one yourself; it is not graded and not part of the average.
+
+Score: 70% (average of 4 graded questions; the one you read yourself is excluded). Passed.
 ```
 
 A check means more than 50 percent, a cross means 50 or less. The script computes the percentages, the average and whether it passed; the AI only shows them. If you do not pass, you choose between repeating the exam (new questions) or continuing (the topic stays pending and is reminded later).

@@ -258,6 +258,15 @@ class FetchTests(unittest.TestCase):
             self.assertEqual(out["error"]["code"], "dossier_not_found")
 
 
+class FileNameTests(unittest.TestCase):
+    def test_windows_safe_names(self):
+        name = docs._file_name("http://127.0.0.1:50577/docs/a(b)/install?x=1&y='2';$!*")
+        for ch in ':*?"<>|!$&\'();\\':
+            self.assertNotIn(ch, name)
+        self.assertTrue(name.endswith(".md"))
+        self.assertIn("__docs__", name)
+
+
 if __name__ == "__main__":
     unittest.main()
 

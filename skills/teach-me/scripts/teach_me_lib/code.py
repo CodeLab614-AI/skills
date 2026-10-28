@@ -230,6 +230,11 @@ def fetch(dossier_id: str, repo: str, ref: str) -> dict:
             for entry in skipped:
                 if entry not in current:
                     current.append(entry)
+            version = profile.get("version")
+            if not isinstance(version, dict):
+                version = profile["version"] = {}
+            if not version.get("label"):
+                version["label"] = label
             profile.setdefault("phases", {})["code"] = _now()
             profile["public_code"] = True
             dossier.save(dossier_id, profile)

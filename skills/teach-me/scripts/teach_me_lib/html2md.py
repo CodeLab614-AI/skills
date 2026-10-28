@@ -14,10 +14,10 @@ _WS = re.compile(r"\s+")
 class _Converter(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.blocks: list = []        # (text, tight): tight blocks join with a single newline
+        self.blocks: list = []        # (text, group): same-group blocks join with a single newline
         self.inline: list = []
         self.prefix = ""
-        self.tight = False
+        self.tight = ""
         self.skip_tag = None
         self.skip_depth = 0
         self.pre: "list | None" = None
@@ -32,7 +32,7 @@ class _Converter(HTMLParser):
         self.inline = []
         if text:
             self.blocks.append((self.prefix + text, self.tight))
-        self.prefix, self.tight = "", False
+        self.prefix, self.tight = "", ""
 
     # -- tags
     def handle_starttag(self, tag, attrs):
@@ -51,7 +51,7 @@ class _Converter(HTMLParser):
             self.prefix = "#" * int(tag[1]) + " "
         elif tag == "li":
             self._flush()
-            self.prefix, self.tight = "- ", True
+            self.prefix, self.tight = "- ", "li"
         elif tag == "pre":
             self._flush()
             self.pre = []
@@ -94,7 +94,7 @@ class _Converter(HTMLParser):
                 code = "".join(self.pre).strip("\n")
                 self.pre = None
                 if code.strip():
-                    self.blocks.append(("```\n" + code + "\n```", False))
+                    self.blocks.append(("```\n" + code + "\n```", ""))
             return
         if tag in _HEADINGS or tag in _BLOCKS or tag == "li":
             self._flush()
@@ -125,9 +125,9 @@ class _Converter(HTMLParser):
 
     def _end_row(self) -> None:
         if self.row:
-            self.blocks.append(("| " + " | ".join(self.row) + " |", True))
+            self.blocks.append(("| " + " | ".join(self.row) + " |", "row"))
             if self.rows_in_table == 0:
-                self.blocks.append(("|" + "---|" * len(self.row), True))
+                self.blocks.append(("|" + "---|" * len(self.row), "row"))
             self.rows_in_table += 1
         self.row = None
 
@@ -144,15 +144,15 @@ class _Converter(HTMLParser):
         if self.pre:
             code = "".join(self.pre).strip("\n")
             if code.strip():
-                self.blocks.append(("```\n" + code + "\n```", False))
+                self.blocks.append(("```\n" + code + "\n```", ""))
             self.pre = None
         self._end_row()
         self._flush()
         out: list = []
-        prev_tight = False
+        prev_tight = ""
         for text, tight in self.blocks:
             if out:
-                out.append("\n" if (tight and prev_tight) else "\n\n")
+                out.append("\n" if (tight and tight == prev_tight) else "\n\n")
             out.append(text)
             prev_tight = tight
         return re.sub(r"\n{3,}", "\n\n", "".join(out)).strip() + "\n" if out else ""

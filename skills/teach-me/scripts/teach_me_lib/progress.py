@@ -25,6 +25,9 @@ def today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
+_local_today = today  # for functions whose `today` parameter shadows the function
+
+
 def _path(folder: Path, meta: dict) -> Path:
     return folder / meta["names"]["progress"]
 
@@ -187,7 +190,7 @@ def show(dossier_id: str, today: "str | None" = None) -> dict:
     meta, _ = dossier.load(dossier_id)
     folder = store.dossier_dir(dossier_id)
     syl = _syllabus(folder, meta, required=True)
-    return _payload(meta, load(folder, meta), syl, today or globals()["today"]())
+    return _payload(meta, load(folder, meta), syl, today or _local_today())
 
 
 def _mutate(dossier_id: str, slug: "str | None", fn) -> dict:
@@ -247,7 +250,7 @@ def outdated(dossier_id: str, slug: str) -> dict:
 
 
 def touch(dossier_id: str, today: "str | None" = None) -> dict:
-    day = today or globals()["today"]()
+    day = today or _local_today()
 
     def fn(head, syl, meta):
         previous = head.get("last_session")
