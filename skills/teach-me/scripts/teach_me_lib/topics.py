@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import dossier, frontmatter, sources, store
+from . import dossier, frontmatter, progress, sources, store
 from .errors import BlockedError
 
 BLOCK_KINDS = ("problem", "idea", "example", "predict", "internals", "pitfalls")
@@ -296,6 +296,7 @@ def save_topic(dossier_id: str, data) -> dict:
                 "blocks": out_blocks}
         path = _topics_dir(folder, meta) / ("%02d-%s.md" % (entry["number"], entry["slug"]))
         store.atomic_write(path, frontmatter.dump(head, _topic_body(meta, head, topics)))
+        progress.clear_outdated(folder, meta, entry["slug"])
     return {"ok": True, "id": dossier_id, "slug": entry["slug"], "number": entry["number"],
             "path": str(path), "claims": len(flat)}
 

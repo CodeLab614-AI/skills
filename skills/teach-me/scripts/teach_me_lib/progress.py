@@ -5,15 +5,20 @@ from datetime import datetime
 from pathlib import Path
 
 from . import dossier, frontmatter, sources, store
+from .errors import BlockedError
 
 _LABELS = {
-    "es": {"title": "Avance", "topic": "Tema", "status": "Estado", "best": "Mejor nota",
-           "attempts": "Intentos", "pending": "Pendientes", "skipped": "Saltados",
+    "es": {"title": "Avance", "number": "N.º", "topic": "Tema", "status": "Estado",
+           "best": "Mejor nota", "attempts": "Intentos", "outdated": "Desactualizado",
+           "yes": "sí", "no": "no", "pending": "Pendientes", "skipped": "Saltados",
            "none": "(ninguno)"},
-    "en": {"title": "Progress", "topic": "Topic", "status": "Status", "best": "Best score",
-           "attempts": "Attempts", "pending": "Pending", "skipped": "Skipped",
+    "en": {"title": "Progress", "number": "No.", "topic": "Topic", "status": "Status",
+           "best": "Best score", "attempts": "Attempts", "outdated": "Outdated",
+           "yes": "yes", "no": "no", "pending": "Pending", "skipped": "Skipped",
            "none": "(none)"},
 }
+_NEEDS_REVIEW_STATUSES = ("passed", "pending")
+MAX_DOUBT = 500
 
 
 def today() -> str:
@@ -54,14 +59,6 @@ def entry(head: dict, slug: str) -> dict:
     return topics[slug]
 
 
-def _title(folder: Path, meta: dict, slug: str) -> str:
-    syl, _ = _read(folder / meta["names"]["syllabus"])
-    for t in syl.get("topics") or []:
-        if t.get("slug") == slug:
-            return t.get("title", slug)
-    return slug
-
-
 def _read(path: Path) -> "tuple[dict, str]":
     try:
         return frontmatter.parse(path.read_text(encoding="utf-8"))
@@ -69,19 +66,38 @@ def _read(path: Path) -> "tuple[dict, str]":
         return {}, ""
 
 
+def _syllabus(folder: Path, meta: dict, required: bool = False) -> list:
+    head, _ = _read(folder / meta["names"]["syllabus"])
+    topics = head.get("topics") if head.get("teach_me") == "syllabus" else None
+    if not isinstance(topics, list):
+        if required:
+            raise BlockedError("bad_input", "This dossier has no syllabus yet; save it first.")
+        return []
+    return topics
+
+
+def _status(head: dict, slug: str) -> str:
+    return (head["topics"].get(slug) or {}).get("status") or "not_started"
+
+
 def _body(folder: Path, meta: dict, head: dict) -> str:
     lab = _LABELS.get(meta.get("lang"), _LABELS["en"])
+    syl = _syllabus(folder, meta)
+    rows = [(t.get("number", "-"), t.get("slug"), t.get("title", t.get("slug"))) for t in syl]
     lines = ["# %s" % lab["title"], "",
-             "| %s | %s | %s | %s |" % (lab["topic"], lab["status"], lab["best"], lab["attempts"]),
-             "|---|---|---|---|"]
-    for slug, t in head["topics"].items():
+             "| %s | %s | %s | %s | %s | %s |" % (lab["number"], lab["topic"], lab["status"],
+                                                 lab["best"], lab["attempts"], lab["outdated"]),
+             "|---|---|---|---|---|---|"]
+    for number, slug, title in rows:
+        t = head["topics"].get(slug) or {}
         best = "-" if t.get("best") is None else "%s%%" % t["best"]
-        lines.append("| %s | %s | %s | %d |" % (_title(folder, meta, slug), t.get("status"),
-                                               best, len(t.get("attempts", []))))
-    for key, status in (("pending", "pending"), ("skipped", "skipped")):
-        names = [s for s, t in head["topics"].items() if t.get("status") == status]
+        lines.append("| %s | %s | %s | %s | %d | %s |" % (
+            number, title, _status(head, slug), best, len(t.get("attempts") or []),
+            lab["yes"] if t.get("outdated") else lab["no"]))
+    for key in ("pending", "skipped"):
         lines += ["", "## %s" % lab[key], ""]
-        lines += ["- %s" % _title(folder, meta, s) for s in names] or [lab["none"]]
+        lines += ["- %s" % title for _n, slug, title in rows if _status(head, slug) == key] \
+            or [lab["none"]]
     return "\n".join(lines) + "\n"
 
 
@@ -126,3 +142,116 @@ def record_review(dossier_id: str, review: dict) -> None:
     head = load(folder, meta)
     head["reviews"].append(review)
     write(folder, meta, head)
+
+
+def clear_outdated(folder: Path, meta: dict, slug: str) -> None:
+    """Called by save_topic inside its own lock; rewrites only if the flag was set."""
+    head = load(folder, meta)
+    t = head["topics"].get(slug)
+    if isinstance(t, dict) and t.get("outdated"):
+        t["outdated"] = False
+        write(folder, meta, head)
+
+
+def _needs_review(head: dict, topics: list, today_: str) -> bool:
+    last = head.get("last_session")
+    if not last or last == today_:
+        return False
+    return any(_status(head, t.get("slug")) in _NEEDS_REVIEW_STATUSES for t in topics)
+
+
+def _view(head: dict, syl: list) -> list:
+    out = []
+    for t in syl:
+        slug = t.get("slug")
+        deps = [d for d in (t.get("depends_on") or [])
+                if _status(head, d) in ("pending", "skipped")]
+        entry_ = head["topics"].get(slug) or {}
+        out.append({"number": t.get("number"), "slug": slug, "title": t.get("title", slug),
+                    "status": _status(head, slug), "best": entry_.get("best"),
+                    "outdated": bool(entry_.get("outdated")), "at_risk": deps})
+    return out
+
+
+def _payload(meta: dict, head: dict, syl: list, today_: str) -> dict:
+    view = _view(head, syl)
+    return {"ok": True, "mode": meta.get("mode"), "current": head.get("current"),
+            "topics": view,
+            "pending": [t["slug"] for t in view if t["status"] == "pending"],
+            "skipped": [t["slug"] for t in view if t["status"] == "skipped"],
+            "needs_review": _needs_review(head, syl, today_)}
+
+
+def show(dossier_id: str, today: "str | None" = None) -> dict:
+    dossier.require(dossier_id)
+    meta, _ = dossier.load(dossier_id)
+    folder = store.dossier_dir(dossier_id)
+    syl = _syllabus(folder, meta, required=True)
+    return _payload(meta, load(folder, meta), syl, today or globals()["today"]())
+
+
+def _mutate(dossier_id: str, slug: "str | None", fn) -> dict:
+    """require -> locked -> load -> write. fn(head, syl, meta) returns the extra payload."""
+    dossier.require(dossier_id)
+    with store.locked(dossier_id) as folder:
+        meta, _ = dossier.load(dossier_id)
+        syl = _syllabus(folder, meta, required=slug is not None)
+        if slug is not None and slug not in [t.get("slug") for t in syl]:
+            raise BlockedError("topic_not_found", "The syllabus has no topic %r." % slug)
+        head = load(folder, meta)
+        extra = fn(head, syl, meta)
+        write(folder, meta, head)
+    return extra
+
+
+def start(dossier_id: str, slug: str) -> dict:
+    def fn(head, syl, meta):
+        t = entry(head, slug)
+        if t["status"] in ("not_started", "skipped"):
+            t["status"] = "in_progress"
+        head["current"] = slug
+        row = next(r for r in _view(head, syl) if r["slug"] == slug)
+        return dict({"ok": True}, **row)
+    return _mutate(dossier_id, slug, fn)
+
+
+def doubt(dossier_id: str, slug: str, text: str) -> dict:
+    text = (text or "").strip()
+    if not text:
+        raise BlockedError("bad_input", "The doubt is empty.")
+    if len(text) > MAX_DOUBT:
+        raise BlockedError("bad_input", "A doubt has at most %d characters." % MAX_DOUBT)
+
+    def fn(head, syl, meta):
+        t = entry(head, slug)
+        t["doubts"].append(text)
+        return {"ok": True, "slug": slug, "doubts": len(t["doubts"])}
+    return _mutate(dossier_id, slug, fn)
+
+
+def skip(dossier_id: str, slug: str) -> dict:
+    def fn(head, syl, meta):
+        t = entry(head, slug)
+        changed = t["status"] != "passed"
+        if changed:
+            t["status"] = "skipped"
+        return {"ok": True, "slug": slug, "status": t["status"], "changed": changed}
+    return _mutate(dossier_id, slug, fn)
+
+
+def outdated(dossier_id: str, slug: str) -> dict:
+    def fn(head, syl, meta):
+        entry(head, slug)["outdated"] = True
+        return {"ok": True, "slug": slug, "outdated": True}
+    return _mutate(dossier_id, slug, fn)
+
+
+def touch(dossier_id: str, today: "str | None" = None) -> dict:
+    day = today or globals()["today"]()
+
+    def fn(head, syl, meta):
+        previous = head.get("last_session")
+        needs = _needs_review(head, syl, day)
+        head["last_session"] = day
+        return {"ok": True, "needs_review": needs, "previous_session": previous}
+    return _mutate(dossier_id, None, fn)

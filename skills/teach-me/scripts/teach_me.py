@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, config, docs, dossier, exams, meta, search, sources, store, topics  # noqa: E402
+from teach_me_lib import code, config, docs, dossier, exams, meta, progress, search, sources, store, topics  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -122,6 +122,20 @@ def _cmd_show_topic(args) -> dict:
     return topics.show_topic(args.id, args.slug)
 
 
+def _cmd_progress(args) -> dict:
+    action, slug = args.action, args.topic
+    if action in ("start", "doubt", "skip", "outdated") and not slug:
+        raise BlockedError("bad_input", "%s needs --topic SLUG." % action)
+    if action == "show":
+        return progress.show(args.id)
+    if action == "touch":
+        return progress.touch(args.id)
+    if action == "doubt":
+        text = _read_stdin()
+        return progress.doubt(args.id, slug, text)
+    return getattr(progress, action)(args.id, slug)
+
+
 def _emit(payload: dict, code: int = 0) -> int:
     try:
         sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -187,6 +201,12 @@ def _register() -> None:
         p.add_argument("id")
         p.add_argument("slug")
 
+    def cfg_progress(p):
+        p.add_argument("id")
+        p.add_argument("action", choices=("show", "start", "doubt", "skip", "outdated", "touch"))
+        p.add_argument("--topic")
+
+    COMMANDS["progress"] = (cfg_progress, _cmd_progress)
     COMMANDS["exam-check"] = (cfg_show_topic, _cmd_exam_check)
     COMMANDS["save-exam"] = (lambda p: p.add_argument("id"), _cmd_save_exam)
     COMMANDS["save-review"] = (lambda p: p.add_argument("id"), _cmd_save_review)
