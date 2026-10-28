@@ -11,6 +11,7 @@ unknown ids.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import frontmatter, names as names_mod, store, urls
@@ -111,14 +112,16 @@ def _profile_body(meta: dict) -> str:
     lines.append("- **%s:** %s" % (lab("status"), _label(_STATUS_LABELS, lang, meta.get("status", ""))))
     lines.append("- **%s:** %s" % (lab("version"), _version_text(meta.get("version")) or lab("none")))
     lic = meta.get("license")
-    lic_text = ", ".join("%s" % v for v in lic.values() if v) if isinstance(lic, dict) else str(lic or "")
+    lic_text = (", ".join(v for v in lic.values() if v and isinstance(v, str))
+                if isinstance(lic, dict) else str(lic or ""))
     lines.append("- **%s:** %s" % (lab("license"), lic_text or lab("none")))
     lines += ["", "## %s" % lab("roots"), ""]
     lines += ["- %s" % r for r in meta.get("roots", [])] or [lab("none")]
     links = meta.get("links")
     if isinstance(links, dict) and links:
         lines += ["", "## %s" % lab("links"), ""]
-        lines += ["- %s: %s" % (k, v) for k, v in links.items()]
+        lines += ["- %s: %s" % (k, ("%s:%s" % (v.get("registry"), v.get("name")))
+                                if isinstance(v, dict) else v) for k, v in links.items()]
     return "\n".join(lines) + "\n"
 
 
@@ -285,3 +288,105 @@ def add_root(dossier_id: str, url: str) -> dict:
             meta["roots"] = roots
             save(dossier_id, meta)
     return {"ok": True, "id": dossier_id, "root": root, "added": added, "roots": roots}
+
+
+# --- update-profile ----------------------------------------------------------
+
+_PHASES = ("meta", "docs_discover", "docs", "code", "syllabus")
+_PATCH_KEYS = ("name", "one_liner", "links", "public_code", "coverage", "phase_done")
+_COVERAGE_KEYS = ("read", "skipped", "not_downloaded")
+_LINK_KEYS = ("web", "docs", "repo", "package")
+
+
+def _bad(message: str) -> BlockedError:
+    return BlockedError("bad_input", message)
+
+
+def _link_root(key: str, value) -> "tuple[object, str]":
+    """Return (value to store, root URL) for one link."""
+    if key == "package":
+        if not isinstance(value, dict) or value.get("registry") not in ("npm", "pypi") \
+                or not isinstance(value.get("name"), str) or not value["name"].strip():
+            raise _bad('links.package must be {"registry": "npm"|"pypi", "name": "..."}.')
+        name = value["name"].strip()
+        url = ("https://www.npmjs.com/package/" + name if value["registry"] == "npm"
+               else "https://pypi.org/project/" + name)
+        return {"registry": value["registry"], "name": name}, urls.root_for(url)
+    if not isinstance(value, str):
+        raise _bad("links.%s must be a URL string." % key)
+    text = value.strip()
+    if key == "repo" and re.match(r"^[\w.-]+/[\w.-]+$", text):
+        text = "https://github.com/" + text
+    urls.normalize(text)
+    return text, urls.root_for(text)
+
+
+def update_profile(dossier_id: str, patch) -> dict:
+    if not isinstance(patch, dict):
+        raise _bad("The patch must be a JSON object.")
+    unknown = [k for k in patch if k not in _PATCH_KEYS]
+    if unknown:
+        raise _bad("Unknown key(s): %s. Allowed: %s." % (", ".join(unknown), ", ".join(_PATCH_KEYS)))
+    for key in ("name", "one_liner"):
+        if key in patch and not isinstance(patch[key], str):
+            raise _bad("%s must be a string." % key)
+    if "public_code" in patch and not isinstance(patch["public_code"], bool):
+        raise _bad("public_code must be true or false.")
+    if "phase_done" in patch and patch["phase_done"] not in _PHASES:
+        raise _bad("phase_done must be one of: %s." % ", ".join(_PHASES))
+    links: dict = {}
+    if "links" in patch:
+        if not isinstance(patch["links"], dict):
+            raise _bad("links must be an object.")
+        for key, value in patch["links"].items():
+            if key not in _LINK_KEYS:
+                raise _bad("Unknown link %r. Allowed: %s." % (key, ", ".join(_LINK_KEYS)))
+            links[key] = _link_root(key, value)
+    coverage: dict = {}
+    if "coverage" in patch:
+        if not isinstance(patch["coverage"], dict):
+            raise _bad("coverage must be an object.")
+        for key, value in patch["coverage"].items():
+            if key not in _COVERAGE_KEYS:
+                raise _bad("Unknown coverage list %r. Allowed: %s." % (key, ", ".join(_COVERAGE_KEYS)))
+            if not isinstance(value, list):
+                raise _bad("coverage.%s must be a list." % key)
+            coverage[key] = value
+
+    require(dossier_id)
+    with store.locked(dossier_id):
+        meta, _ = load(dossier_id)
+        if "name" in patch:
+            meta["name"] = patch["name"]
+        if "one_liner" in patch:
+            meta["one_liner"] = patch["one_liner"]
+        stored_links = dict(meta.get("links") or {})
+        roots = list(meta.get("roots", []))
+        for key, (value, root) in links.items():
+            stored_links[key] = value
+            if root not in roots:
+                roots.append(root)
+        meta["links"], meta["roots"] = stored_links, roots
+        cov = meta.setdefault("coverage", {})
+        for key in _COVERAGE_KEYS:
+            cov.setdefault(key, [])
+        for key, items in coverage.items():
+            cov[key] = list(cov[key]) + items
+        phases = meta.setdefault("phases", {})
+        done = []
+        if "public_code" in patch:
+            meta["public_code"] = patch["public_code"]
+            if patch["public_code"] is False:
+                done.append("code")
+                entry = {"what": "code", "reason": "no_public_code"}
+                if entry not in cov["not_downloaded"]:
+                    cov["not_downloaded"].append(entry)
+        if "phase_done" in patch:
+            done.append(patch["phase_done"])
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for phase in done:
+            phases[phase] = stamp
+        save(dossier_id, meta)
+    return {"ok": True, "id": dossier_id, "roots": roots, "links": stored_links,
+            "phases": phases, "public_code": meta.get("public_code"),
+            "coverage": cov}

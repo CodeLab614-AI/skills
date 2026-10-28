@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import dossier  # noqa: E402
+from teach_me_lib import dossier, meta  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -57,6 +57,14 @@ def _cmd_add_root(args) -> dict:
     return dossier.add_root(args.id, args.url)
 
 
+def _cmd_fetch_meta(args) -> dict:
+    return meta.fetch_meta(args.id, args.npm, args.pypi, args.repo)
+
+
+def _cmd_update_profile(args) -> dict:
+    return dossier.update_profile(args.id, _read_stdin_json())
+
+
 def _emit(payload: dict, code: int = 0) -> int:
     try:
         sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -94,6 +102,14 @@ def _register() -> None:
         p.add_argument("id")
         p.add_argument("url")
 
+    def cfg_fetch_meta(p):
+        p.add_argument("id")
+        p.add_argument("--npm")
+        p.add_argument("--pypi")
+        p.add_argument("--repo")
+
+    COMMANDS["fetch-meta"] = (cfg_fetch_meta, _cmd_fetch_meta)
+    COMMANDS["update-profile"] = (lambda p: p.add_argument("id"), _cmd_update_profile)
     COMMANDS["init"] = (cfg_init, _cmd_init)
     COMMANDS["add-root"] = (cfg_add_root, _cmd_add_root)
 

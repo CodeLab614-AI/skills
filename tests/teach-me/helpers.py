@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import unquote, urlsplit
 import subprocess
 import sys
 import tempfile
@@ -60,3 +63,59 @@ def run_script(*args: str, stdin: str | None = None,
     except ValueError:
         data = {"raw": out, "stderr": proc.stderr.decode("utf-8", errors="replace")}
     return proc.returncode, data
+
+
+class FixtureServer:
+    """Local HTTP server. routes: path -> (status, content_type, body) or a
+    callable(path) -> (status, content_type, body[, extra_headers]). Query strings are
+    ignored for matching; unknown paths answer 404. Use as a context manager."""
+
+    def __init__(self, routes: dict) -> None:
+        self.routes = routes
+        self.requests: list = []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                path = urlsplit(self.path).path
+                outer.requests.append({"path": path, "headers": dict(self.headers.items())})
+                route = outer.routes.get(path) or outer.routes.get(unquote(path))
+                extra = {}
+                if route is None:
+                    status, ctype, body = 404, "text/plain", b"not found"
+                else:
+                    if callable(route):
+                        route = route(path)
+                    status, ctype, body = route[:3]
+                    extra = route[3] if len(route) > 3 else {}
+                self.send_response(status)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                for k, v in extra.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._server.daemon_threads = True
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def __enter__(self) -> "FixtureServer":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+    def url(self, path: str = "/") -> str:
+        return "http://127.0.0.1:%d%s" % (self._server.server_address[1], path)
+
+    def env(self) -> dict:
+        base = self.url("")
+        return {"TEACH_ME_NPM_REGISTRY": base, "TEACH_ME_PYPI_BASE": base,
+                "TEACH_ME_GITHUB_API": base, "TEACH_ME_CODELOAD": base}
