@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, docs, dossier, meta  # noqa: E402
+from teach_me_lib import code, docs, dossier, meta, sources  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -77,6 +77,14 @@ def _cmd_fetch_code(args) -> dict:
     return code.fetch(args.id, args.repo, args.ref)
 
 
+def _cmd_excerpts(args) -> dict:
+    data = _read_stdin_json()
+    if not isinstance(data, dict) or "claims" not in data:
+        raise BlockedError("bad_input", "Standard input must be an object with a claims list.")
+    claims, unverified = sources.check_claims(args.id, data["claims"])
+    return {"ok": True, "claims": claims, "unverified": unverified}
+
+
 def _emit(payload: dict, code: int = 0) -> int:
     try:
         sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -133,6 +141,7 @@ def _register() -> None:
         p.add_argument("--repo", required=True)
         p.add_argument("--ref", required=True)
 
+    COMMANDS["excerpts"] = (lambda p: p.add_argument("id"), _cmd_excerpts)
     COMMANDS["fetch-code"] = (cfg_fetch_code, _cmd_fetch_code)
     COMMANDS["discover-docs"] = (cfg_discover_docs, _cmd_discover_docs)
     COMMANDS["fetch-docs"] = (cfg_fetch_docs, _cmd_fetch_docs)
