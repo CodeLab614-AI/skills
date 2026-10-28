@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, config, docs, dossier, meta, search, sources, store, topics  # noqa: E402
+from teach_me_lib import code, config, docs, dossier, exams, meta, search, sources, store, topics  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -96,6 +96,20 @@ def _cmd_config(args) -> dict:
     return {"ok": True, "path": path, "agents": config.load()["agents"]}
 
 
+def _cmd_exam_check(args) -> dict:
+    data = _read_stdin_json()
+    questions = data.get("questions") if isinstance(data, dict) else data
+    return exams.check(args.id, args.slug, questions)
+
+
+def _cmd_save_exam(args) -> dict:
+    return exams.save(args.id, _read_stdin_json())
+
+
+def _cmd_save_review(args) -> dict:
+    return exams.save_review(args.id, _read_stdin_json())
+
+
 def _cmd_save_syllabus(args) -> dict:
     return topics.save_syllabus(args.id, _read_stdin_json())
 
@@ -173,6 +187,9 @@ def _register() -> None:
         p.add_argument("id")
         p.add_argument("slug")
 
+    COMMANDS["exam-check"] = (cfg_show_topic, _cmd_exam_check)
+    COMMANDS["save-exam"] = (lambda p: p.add_argument("id"), _cmd_save_exam)
+    COMMANDS["save-review"] = (lambda p: p.add_argument("id"), _cmd_save_review)
     COMMANDS["save-syllabus"] = (lambda p: p.add_argument("id"), _cmd_save_syllabus)
     COMMANDS["save-topic"] = (lambda p: p.add_argument("id"), _cmd_save_topic)
     COMMANDS["show-topic"] = (cfg_show_topic, _cmd_show_topic)
