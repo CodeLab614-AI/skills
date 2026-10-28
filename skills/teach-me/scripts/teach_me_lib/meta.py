@@ -80,6 +80,45 @@ def find_tag(repo: str, package: str, version: str) -> "str | None":
     return None
 
 
+def registry_package(registry: str, name: str):
+    """Latest version of one package. Returns (pkg, meta_file_name, raw_text, final_url)."""
+    if registry == "npm":
+        url = "%s/%s" % (net.base("npm"), quote(name, safe="@").replace("/", "%2F"))
+        data, text, final = _get_json(url, "npm package %s" % name)
+        latest = (data.get("dist-tags") or {}).get("latest")
+        if not latest:
+            raise BlockedError("fetch_failed", "npm package %s has no latest version." % name)
+        lic = _clean_license(((data.get("versions") or {}).get(latest) or {}).get("license"))
+        return ({"registry": "npm", "name": name, "latest": latest, "license": lic},
+                "npm.md", text, final)
+    if registry == "pypi":
+        url = "%s/%s/json" % (net.base("pypi"), quote(name, safe=""))
+        data, text, final = _get_json(url, "PyPI package %s" % name)
+        info = data.get("info") or {}
+        latest = info.get("version")
+        if not latest:
+            raise BlockedError("fetch_failed", "PyPI package %s has no version." % name)
+        lic = _clean_license(info.get("license_expression"))
+        if not lic:
+            short = _clean_license(info.get("license"))
+            lic = short if short and len(short) <= 100 and "\n" not in short else None
+        return ({"registry": "pypi", "name": name, "latest": latest, "license": lic},
+                "pypi.md", text, final)
+    raise BlockedError("bad_input", "Unknown registry %r." % (registry,))
+
+
+def head_sha(slug: str) -> "str | None":
+    """Head commit sha of the default branch of OWNER/NAME (GitHub API)."""
+    api = net.base("github_api")
+    data, _t, _f = _get_json("%s/repos/%s" % (api, slug), "GitHub repository %s" % slug)
+    branch = data.get("default_branch")
+    if not branch:
+        return None
+    cdata, _t, _f = _get_json("%s/repos/%s/commits/%s" % (api, slug, quote(branch, safe="/")),
+                              "the head commit of %s" % slug)
+    return cdata.get("sha")
+
+
 def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
                repo: "str | None") -> dict:
     if npm and pypi:
@@ -93,28 +132,9 @@ def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
     notices: list = []
     out: dict = {"ok": True}
     pkg = None
-    if npm:
-        url = "%s/%s" % (net.base("npm"), quote(npm, safe="@").replace("/", "%2F"))
-        data, text, final = _get_json(url, "npm package %s" % npm)
-        latest = (data.get("dist-tags") or {}).get("latest")
-        if not latest:
-            raise BlockedError("fetch_failed", "npm package %s has no latest version." % npm)
-        lic = _clean_license(((data.get("versions") or {}).get(latest) or {}).get("license"))
-        pkg = {"registry": "npm", "name": npm, "latest": latest, "license": lic}
-        files["npm.md"] = _meta_markdown(final, text)
-    elif pypi:
-        url = "%s/%s/json" % (net.base("pypi"), quote(pypi, safe=""))
-        data, text, final = _get_json(url, "PyPI package %s" % pypi)
-        info = data.get("info") or {}
-        latest = info.get("version")
-        if not latest:
-            raise BlockedError("fetch_failed", "PyPI package %s has no version." % pypi)
-        lic = _clean_license(info.get("license_expression"))
-        if not lic:
-            short = _clean_license(info.get("license"))
-            lic = short if short and len(short) <= 100 and "\n" not in short else None
-        pkg = {"registry": "pypi", "name": pypi, "latest": latest, "license": lic}
-        files["pypi.md"] = _meta_markdown(final, text)
+    if npm or pypi:
+        pkg, md_name, text, final = registry_package("npm" if npm else "pypi", npm or pypi)
+        files[md_name] = _meta_markdown(final, text)
     if pkg:
         out["package"] = pkg
 

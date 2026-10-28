@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, config, docs, dossier, exams, meta, progress, search, sources, store, topics  # noqa: E402
+from teach_me_lib import code, config, docs, dossier, exams, meta, progress, search, sources, store, topics, update  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -122,6 +122,10 @@ def _cmd_show_topic(args) -> dict:
     return topics.show_topic(args.id, args.slug)
 
 
+def _cmd_check_update(args) -> dict:
+    return update.check(args.id)
+
+
 def _cmd_progress(args) -> dict:
     action, slug = args.action, args.topic
     if action in ("start", "doubt", "skip", "outdated") and not slug:
@@ -206,6 +210,7 @@ def _register() -> None:
         p.add_argument("action", choices=("show", "start", "doubt", "skip", "outdated", "touch"))
         p.add_argument("--topic")
 
+    COMMANDS["check-update"] = (lambda p: p.add_argument("id"), _cmd_check_update)
     COMMANDS["progress"] = (cfg_progress, _cmd_progress)
     COMMANDS["exam-check"] = (cfg_show_topic, _cmd_exam_check)
     COMMANDS["save-exam"] = (lambda p: p.add_argument("id"), _cmd_save_exam)
