@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""teach-me CLI: argparse and subcommand dispatch only."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from teach_me_lib.errors import BlockedError  # noqa: E402
+
+# name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
+COMMANDS: dict = {}
+
+
+def _setup_io() -> None:
+    """JSON is always UTF-8, whatever the locale: lossy on output, strict on input."""
+    for stream, errors in ((sys.stdout, "replace"), (sys.stdin, "strict")):
+        try:
+            stream.reconfigure(encoding="utf-8", errors=errors)
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+def _read_stdin() -> str:
+    try:
+        return sys.stdin.read()
+    except UnicodeDecodeError:
+        raise BlockedError("bad_input", "Standard input is not valid UTF-8.")
+
+
+def _read_stdin_json():
+    raw = _read_stdin()
+    try:
+        return json.loads(raw)
+    except ValueError:
+        raise BlockedError("bad_input", "Standard input is not valid JSON.")
+
+
+def _emit(payload: dict, code: int = 0) -> int:
+    try:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except (UnicodeError, ValueError):
+        sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    return code
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """Turn argparse usage errors into the bad_input block (exit 2, JSON)."""
+
+    def error(self, message):
+        raise BlockedError("bad_input", message)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = JsonArgumentParser(prog="teach_me")
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name, (configure, _handler) in COMMANDS.items():
+        configure(sub.add_parser(name))
+    return parser
+
+
+def main(argv=None) -> int:
+    _setup_io()
+    try:
+        args = build_parser().parse_args(argv)
+        return _emit(COMMANDS[args.command][1](args))
+    except BlockedError as exc:
+        return _emit({"ok": False, "error": {"code": exc.code, "message": exc.message}}, 2)
+    except Exception as exc:  # internal error
+        try:
+            message = str(exc)
+        except Exception:
+            message = exc.__class__.__name__
+        return _emit({"ok": False, "error": {"code": "internal_error", "message": message}}, 1)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

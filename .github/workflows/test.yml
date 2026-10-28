@@ -29,5 +29,7 @@ jobs:
         run: |
           git config --global user.email "ci@example.com"
           git config --global user.name "CI"
-      - name: Run tests
+      - name: Run explain-changes tests
         run: python3 -m unittest discover -s tests/explain-changes -v
+      - name: Run teach-me tests
+        run: python3 -m unittest discover -s tests/teach-me -v
