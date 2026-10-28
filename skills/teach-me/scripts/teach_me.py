@@ -70,7 +70,7 @@ def _cmd_discover_docs(args) -> dict:
 
 
 def _cmd_fetch_docs(args) -> dict:
-    return docs.fetch(args.id, args.url)
+    return docs.fetch(args.id, args.url, args.refresh)
 
 
 def _cmd_fetch_code(args) -> dict:
@@ -190,6 +190,7 @@ def _register() -> None:
     def cfg_fetch_docs(p):
         p.add_argument("id")
         p.add_argument("--url")
+        p.add_argument("--refresh", action="store_true")
 
     def cfg_fetch_code(p):
         p.add_argument("id")

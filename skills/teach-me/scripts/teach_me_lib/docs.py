@@ -346,7 +346,9 @@ def _flush(dossier_id: str, results: list, extra_urls: list, finish: bool) -> No
             dossier.save(dossier_id, meta)
 
 
-def fetch(dossier_id: str, url: "str | None") -> dict:
+def fetch(dossier_id: str, url: "str | None", refresh: bool = False) -> dict:
+    if refresh and url is None:
+        raise BlockedError("bad_input", "--refresh needs --url PAGE.")
     dossier.require(dossier_id)
     meta, _ = dossier.load(dossier_id)
     docs_dir = _docs_dir(store.dossier_dir(dossier_id), meta)
@@ -364,7 +366,7 @@ def fetch(dossier_id: str, url: "str | None") -> dict:
         urls.normalize(cleaned)
         known = {urls.normalize(p["url"]): p for p in (pages or [])}
         entry = known.get(urls.normalize(cleaned))
-        if entry is not None and entry["state"] == "ok":
+        if entry is not None and entry["state"] == "ok" and not refresh:
             todo, already = [], 1
         else:
             todo, already = [entry["url"] if entry else cleaned], 0

@@ -174,6 +174,32 @@ class FetchTests(unittest.TestCase):
             self.assertEqual((out["downloaded"], out["already"]), (0, 1), out)
             self.assertEqual(len(srv.requests), before)
 
+    def test_refresh_redownloads_one_ok_page(self):
+        routes = dict(llms(None, "/docs/a", "/docs/b"), **{"/docs/a.md": md("# Old\n"), "/docs/b": page("B")})
+        with FixtureServer(routes) as srv, TempHome():
+            did = setup(srv)
+            run_script("discover-docs", did, srv.url("/docs"), env=srv.env())
+            run_script("fetch-docs", did, env=srv.env())
+            srv.routes["/docs/a.md"] = md("# New content\n")
+            before = len(srv.requests)
+            code, out = run_script("fetch-docs", did, "--url", srv.url("/docs/a"), "--refresh",
+                                   env=srv.env())
+            self.assertEqual(code, 0, out)
+            self.assertEqual((out["downloaded"], out["already"]), (1, 0), out)
+            self.assertGreater(len(srv.requests), before)
+            text = docs.page_path(did, srv.url("/docs/a")).read_text(encoding="utf-8")
+            self.assertIn("New content", text)
+            self.assertNotIn("Old", text)
+            self.assertEqual(states(did), {"a": "ok", "b": "ok"})
+
+    def test_refresh_without_url_is_bad_input(self):
+        with FixtureServer({}) as srv, TempHome():
+            did = setup(srv)
+            code, out = run_script("fetch-docs", did, "--refresh", env=srv.env())
+            self.assertEqual(code, 2)
+            self.assertEqual(out["error"]["code"], "bad_input")
+            self.assertIn("--url", out["error"]["message"])
+
     def test_single_url_fetch_added_to_list(self):
         routes = {"/docs/extra": page("Extra")}
         with FixtureServer(routes) as srv, TempHome():
