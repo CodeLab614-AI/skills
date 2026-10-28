@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, docs, dossier, meta, sources  # noqa: E402
+from teach_me_lib import code, docs, dossier, meta, search, sources  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -85,6 +85,10 @@ def _cmd_excerpts(args) -> dict:
     return {"ok": True, "claims": claims, "unverified": unverified}
 
 
+def _cmd_search(args) -> dict:
+    return search.query(args.id, args.query, args.k)
+
+
 def _emit(payload: dict, code: int = 0) -> int:
     try:
         sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -141,6 +145,12 @@ def _register() -> None:
         p.add_argument("--repo", required=True)
         p.add_argument("--ref", required=True)
 
+    def cfg_search(p):
+        p.add_argument("id")
+        p.add_argument("query")
+        p.add_argument("--k", type=int, default=5)
+
+    COMMANDS["search"] = (cfg_search, _cmd_search)
     COMMANDS["excerpts"] = (lambda p: p.add_argument("id"), _cmd_excerpts)
     COMMANDS["fetch-code"] = (cfg_fetch_code, _cmd_fetch_code)
     COMMANDS["discover-docs"] = (cfg_discover_docs, _cmd_discover_docs)
