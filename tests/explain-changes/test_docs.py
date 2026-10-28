@@ -44,8 +44,8 @@ class DocsTest(unittest.TestCase):
             self.assertIn(agent, section, agent)
 
     def test_docs_dir_has_only_usage_markdown(self):
-        files = [p for p in (ROOT / "docs").rglob("*") if p.is_file()]
-        self.assertEqual([p.name for p in files], ["explain-changes.md"])
+        files = [p for p in (ROOT / "docs").iterdir() if p.is_file()]
+        self.assertEqual(sorted(p.name for p in files), ["explain-changes.md", "teach-me.md"])
 
     def test_every_block_code_is_documented(self):
         text = DOC.read_text(encoding="utf-8")

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import helpers  # noqa: F401
@@ -258,3 +260,30 @@ class FetchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class UsageGuideTest(unittest.TestCase):
+    def test_readme_lists_teach_me_in_both_languages(self):
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        en = text.split("### Skills")[1].split("### Install")[0]
+        es = text.split("### Skills")[2].split("### Instalaci")[0]
+        for section in (en, es):
+            rows = [r for r in section.splitlines() if r.startswith("| `teach-me` |")]
+            self.assertEqual(len(rows), 1, section)
+            self.assertIn("(docs/teach-me.md)", rows[0])
+
+    def test_docs_links_resolve(self):
+        doc = ROOT / "docs" / "teach-me.md"
+        text = doc.read_text(encoding="utf-8")
+        for link in re.findall(r"\]\(([^)#\s]+)", text):
+            if re.match(r"[a-z]+:", link):
+                continue
+            self.assertTrue((doc.parent / link).exists(), link)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        links = re.findall(r"\]\((docs/[^)#]*)", readme)
+        self.assertIn("docs/teach-me.md", links)
+        for link in links:
+            self.assertTrue((ROOT / link).is_file(), link)
