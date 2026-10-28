@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, config, docs, dossier, meta, search, sources, store  # noqa: E402
+from teach_me_lib import code, config, docs, dossier, meta, search, sources, store, topics  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -96,6 +96,18 @@ def _cmd_config(args) -> dict:
     return {"ok": True, "path": path, "agents": config.load()["agents"]}
 
 
+def _cmd_save_syllabus(args) -> dict:
+    return topics.save_syllabus(args.id, _read_stdin_json())
+
+
+def _cmd_save_topic(args) -> dict:
+    return topics.save_topic(args.id, _read_stdin_json())
+
+
+def _cmd_show_topic(args) -> dict:
+    return topics.show_topic(args.id, args.slug)
+
+
 def _emit(payload: dict, code: int = 0) -> int:
     try:
         sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -157,6 +169,13 @@ def _register() -> None:
         p.add_argument("query")
         p.add_argument("--k", type=int, default=5)
 
+    def cfg_show_topic(p):
+        p.add_argument("id")
+        p.add_argument("slug")
+
+    COMMANDS["save-syllabus"] = (lambda p: p.add_argument("id"), _cmd_save_syllabus)
+    COMMANDS["save-topic"] = (lambda p: p.add_argument("id"), _cmd_save_topic)
+    COMMANDS["show-topic"] = (cfg_show_topic, _cmd_show_topic)
     COMMANDS["config"] = (lambda p: p.add_argument("--agent"), _cmd_config)
     COMMANDS["search"] = (cfg_search, _cmd_search)
     COMMANDS["excerpts"] = (lambda p: p.add_argument("id"), _cmd_excerpts)
