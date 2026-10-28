@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import docs, dossier, meta  # noqa: E402
+from teach_me_lib import code, docs, dossier, meta  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -73,6 +73,10 @@ def _cmd_fetch_docs(args) -> dict:
     return docs.fetch(args.id, args.url)
 
 
+def _cmd_fetch_code(args) -> dict:
+    return code.fetch(args.id, args.repo, args.ref)
+
+
 def _emit(payload: dict, code: int = 0) -> int:
     try:
         sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -124,6 +128,12 @@ def _register() -> None:
         p.add_argument("id")
         p.add_argument("--url")
 
+    def cfg_fetch_code(p):
+        p.add_argument("id")
+        p.add_argument("--repo", required=True)
+        p.add_argument("--ref", required=True)
+
+    COMMANDS["fetch-code"] = (cfg_fetch_code, _cmd_fetch_code)
     COMMANDS["discover-docs"] = (cfg_discover_docs, _cmd_discover_docs)
     COMMANDS["fetch-docs"] = (cfg_fetch_docs, _cmd_fetch_docs)
     COMMANDS["fetch-meta"] = (cfg_fetch_meta, _cmd_fetch_meta)

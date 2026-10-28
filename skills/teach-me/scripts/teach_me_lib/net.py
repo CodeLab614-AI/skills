@@ -69,7 +69,11 @@ def _read(fp, max_bytes: int) -> bytes:
     return data
 
 
-def get(url: str, max_bytes: int) -> Response:
+def _perform(url: str, handle):
+    """Open url with the shared rules and return handle(fp, status, content_type, final_url).
+
+    Raises bad_input for non-http(s) URLs, github_rate_limited for GitHub 403/429 and
+    fetch_failed for 5xx and transport errors. Other 4xx statuses reach handle."""
     try:
         parts = urlsplit(url)
         ok = parts.scheme.lower() in ("http", "https") and bool(parts.hostname)
@@ -95,8 +99,7 @@ def get(url: str, max_bytes: int) -> Response:
                     "Set the GITHUB_TOKEN environment variable and try again." % status)
             if status >= 500:
                 raise BlockedError("fetch_failed", "%s answered HTTP %d." % (url, status))
-            body = _read(err, max_bytes)
-            return Response(status, err.headers.get("Content-Type", ""), body, err.geturl() or url)
+            return handle(err, status, err.headers.get("Content-Type", ""), err.geturl() or url)
         except (OSError, http.client.HTTPException) as exc:
             raise BlockedError("fetch_failed", "Could not read %s: %s" % (url, exc))
         finally:
@@ -104,9 +107,44 @@ def get(url: str, max_bytes: int) -> Response:
     except (urllib.error.URLError, OSError, http.client.HTTPException, socket.timeout, ValueError) as exc:
         raise BlockedError("fetch_failed", "Could not fetch %s: %s" % (url, exc))
     try:
-        body = _read(fp, max_bytes)
-        return Response(fp.status, fp.headers.get("Content-Type", ""), body, fp.geturl() or url)
+        return handle(fp, fp.status, fp.headers.get("Content-Type", ""), fp.geturl() or url)
     except (OSError, http.client.HTTPException) as exc:
         raise BlockedError("fetch_failed", "Could not read %s: %s" % (url, exc))
     finally:
         fp.close()
+
+
+def get(url: str, max_bytes: int) -> Response:
+    def handle(fp, status, ctype, final):
+        return Response(status, ctype, _read(fp, max_bytes), final)
+    return _perform(url, handle)
+
+
+def download(url: str, dest, max_bytes: int) -> Response:
+    """Stream a 200 response into dest in chunks (never held in memory). Other statuses
+    return a Response with an empty body and write nothing. dest is removed on failure."""
+    def handle(fp, status, ctype, final):
+        if status != 200:
+            return Response(status, ctype, b"", final)
+        length = fp.headers.get("Content-Length")
+        if length and length.isdigit() and int(length) > max_bytes:
+            raise _too_large(max_bytes)
+        total = 0
+        with open(str(dest), "wb") as out:
+            while True:
+                chunk = fp.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise _too_large(max_bytes)
+                out.write(chunk)
+        return Response(status, ctype, b"", final)
+    try:
+        return _perform(url, handle)
+    except BaseException:
+        try:
+            os.unlink(str(dest))
+        except OSError:
+            pass
+        raise
