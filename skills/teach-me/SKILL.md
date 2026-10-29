@@ -51,7 +51,7 @@ If the invocation had no URL, run `python3 "<SKILL_DIR>/scripts/teach_me.py" lis
 - `existing` with status `ready`: run `check-update` (section 10), then resume (section 9). Say what exists (mode, current topic, pending ones).
 - `existing` with status `investigating`: resume the research from the first phase not finished (section 4); the script skips what is already downloaded. Do not teach from an `investigating` dossier.
 - `ambiguous`: show the `candidates` and ask whether it is the same library. If yes, run `python3 "<SKILL_DIR>/scripts/teach_me.py" add-root <id> <url>`; if no, create a new one with `init` as below.
-- `new`: `python3 "<SKILL_DIR>/scripts/teach_me.py" init <url> --lang <code> --mode use`, with `<code>` the conversation language. Spanish (`es`) and English (`en`) have built-in file names. For any other language, translate the names once (keys listed in [references/research.md](references/research.md)) and add `--names-stdin` with the JSON object on stdin. If the mode is blocked with `mode_not_available`, go back to section 1.
+- `new`: `python3 "<SKILL_DIR>/scripts/teach_me.py" init <url> --lang <code> --mode use`, with `<code>` the conversation language. Spanish (`es`) and English (`en`) have built-in file names. For any other language, translate the names once (keys listed in [references/research.md](references/research.md)) and add `--names-stdin` with the JSON object on stdin. To change the mode of an existing dossier use `python3 "<SKILL_DIR>/scripts/teach_me.py" set-mode <id> <mode>`; it reports `missing_parts` and `set_aside_parts` and deletes nothing.
 
 ## 4. Research (do it all, once)
 

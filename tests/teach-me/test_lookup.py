@@ -222,11 +222,8 @@ class LookupTests(unittest.TestCase):
             code, data = init("https://lib.example.fr/doc", "fr")
             self.assertEqual((code, data["error"]["code"]), (2, "names_required"))
 
-    def test_mode_not_available(self):
+    def test_bogus_mode_and_bad_lookup_input(self):
         with TempHome():
-            for mode in ("overview", "overview-internals", "use-internals"):
-                code, data = run_script("init", "https://a.dev/x", "--lang", "en", "--mode", mode)
-                self.assertEqual((code, data["error"]["code"]), (2, "mode_not_available"))
             code, data = run_script("init", "https://a.dev/x", "--lang", "en", "--mode", "bogus")
             self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
             code, data = run_script("lookup", "SDK de Vercel")

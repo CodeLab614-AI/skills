@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, config, docs, dossier, exams, meta, progress, search, sources, store, topics, update  # noqa: E402
+from teach_me_lib import code, config, docs, dossier, exams, meta, modes, progress, search, sources, store, topics, update  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -59,6 +59,10 @@ def _cmd_add_root(args) -> dict:
 
 def _cmd_discard(args) -> dict:
     return dossier.discard(args.id)
+
+
+def _cmd_set_mode(args) -> dict:
+    return modes.set_mode(args.id, args.mode)
 
 
 def _cmd_fetch_meta(args) -> dict:
@@ -238,6 +242,7 @@ def _register() -> None:
     COMMANDS["update-profile"] = (lambda p: p.add_argument("id"), _cmd_update_profile)
     COMMANDS["init"] = (cfg_init, _cmd_init)
     COMMANDS["discard"] = (lambda p: p.add_argument("id"), _cmd_discard)
+    COMMANDS["set-mode"] = (lambda p: (p.add_argument("id"), p.add_argument("mode")), _cmd_set_mode)
     COMMANDS["add-root"] = (cfg_add_root, _cmd_add_root)
 
 
