@@ -84,6 +84,17 @@ class TestProgress(ProgBase):
         self.prog_cmd("start", "--topic", "beta")
         self.assertEqual(self.statuses()["beta"], "in_progress")
 
+    def test_progress_on_set_aside_topic_blocks(self):
+        run_script("set-mode", self.did, "use-internals")
+        run_script("save-syllabus", self.did, stdin=json.dumps(
+            {"topics": [stopic("alpha"), stopic("core", part="internals")]}))
+        run_script("set-mode", self.did, "use")
+        for action in ("start", "skip", "doubt"):
+            code, out = self.prog_cmd(action, "--topic", "core", stdin="why")
+            self.assertEqual((code, out["error"]["code"]), (2, "part_not_in_mode"), action)
+        self.assertEqual(self.prog_cmd("outdated", "--topic", "core")[0], 0)
+        self.assertEqual(self.prog_cmd("start", "--topic", "alpha")[0], 0)
+
     def test_needs_review_next_day(self):
         self.do_exam("alpha", 90)
         code, out = self.prog_cmd("touch")

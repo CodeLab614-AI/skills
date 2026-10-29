@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from . import dossier, frontmatter, sources, store
+from . import dossier, frontmatter, modes, sources, store
 from .errors import BlockedError
 
 _LABELS = {
@@ -193,14 +193,18 @@ def show(dossier_id: str, today: "str | None" = None) -> dict:
     return _payload(meta, load(folder, meta), syl, today or _local_today())
 
 
-def _mutate(dossier_id: str, slug: "str | None", fn) -> dict:
-    """require -> locked -> load -> write. fn(head, syl, meta) returns the extra payload."""
+def _mutate(dossier_id: str, slug: "str | None", fn, in_mode: bool = False) -> dict:
+    """require -> locked -> load -> write. fn(head, syl, meta) returns the extra payload.
+    in_mode: refuse a topic that is set aside in the current mode."""
     dossier.require(dossier_id)
     with store.locked(dossier_id) as folder:
         meta, _ = dossier.load(dossier_id)
         syl = _syllabus(folder, meta, required=slug is not None)
-        if slug is not None and slug not in [t.get("slug") for t in syl]:
+        found = next((t for t in syl if t.get("slug") == slug), None) if slug is not None else None
+        if slug is not None and found is None:
             raise BlockedError("topic_not_found", "The syllabus has no topic %r." % slug)
+        if in_mode and found is not None:
+            modes.require_in_mode(meta, found)
         head = load(folder, meta)
         extra = fn(head, syl, meta)
         write(folder, meta, head)
@@ -215,7 +219,7 @@ def start(dossier_id: str, slug: str) -> dict:
         head["current"] = slug
         row = next(r for r in _view(head, syl) if r["slug"] == slug)
         return dict({"ok": True}, **row)
-    return _mutate(dossier_id, slug, fn)
+    return _mutate(dossier_id, slug, fn, in_mode=True)
 
 
 def doubt(dossier_id: str, slug: str, text: str) -> dict:
@@ -229,7 +233,7 @@ def doubt(dossier_id: str, slug: str, text: str) -> dict:
         t = entry(head, slug)
         t["doubts"].append(text)
         return {"ok": True, "slug": slug, "doubts": len(t["doubts"])}
-    return _mutate(dossier_id, slug, fn)
+    return _mutate(dossier_id, slug, fn, in_mode=True)
 
 
 def skip(dossier_id: str, slug: str) -> dict:
@@ -239,7 +243,7 @@ def skip(dossier_id: str, slug: str) -> dict:
         if changed:
             t["status"] = "skipped"
         return {"ok": True, "slug": slug, "status": t["status"], "changed": changed}
-    return _mutate(dossier_id, slug, fn)
+    return _mutate(dossier_id, slug, fn, in_mode=True)
 
 
 def outdated(dossier_id: str, slug: str) -> dict:

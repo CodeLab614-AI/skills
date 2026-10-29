@@ -72,6 +72,23 @@ class ExamBase(unittest.TestCase):
         return head
 
 
+class TestSetAside(ExamBase):
+    def setUp(self):
+        super().setUp()
+        run_script("set-mode", self.did, "use-internals")
+        code, out = run_script("save-syllabus", self.did, stdin=json.dumps(
+            {"topics": [stopic("alpha"), stopic("beta"), stopic("core", part="internals")]}))
+        assert code == 0, out
+        run_script("set-mode", self.did, "use")
+
+    def test_exam_on_set_aside_topic_blocks(self):
+        code, out = self.check(questions(), slug="core")
+        self.assertEqual((code, out["error"]["code"]), (2, "part_not_in_mode"))
+        code, out = self.save(exam(graded(questions()), slug="core"))
+        self.assertEqual((code, out["error"]["code"]), (2, "part_not_in_mode"))
+        self.assertEqual(self.check(questions(), slug="alpha")[0], 0)
+
+
 class TestScoring(ExamBase):
     def test_score_50_is_incorrect_and_51_correct(self):
         qs = questions(["open"] * 5)

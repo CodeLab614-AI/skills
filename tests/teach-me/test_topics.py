@@ -150,6 +150,96 @@ class SyllabusTest(TopicsBase):
         self.syl(stopic("a"))
         self.assertEqual(self.tfiles(), ["02-b.md"])
 
+    def test_syllabus_two_parts_in_use_internals(self):
+        run_script("set-mode", self.did, "use-internals")
+        code, out = self.syl(stopic("a"), stopic("b"), stopic("c", part="internals"))
+        self.assertEqual(code, 0, out)
+        meta, body = frontmatter.parse((self.base / self.n["syllabus"]).read_text(encoding="utf-8"))
+        self.assertEqual([t["part"] for t in meta["topics"]], ["use", "use", "internals"])
+        self.assertEqual(meta["topics"][2]["number"], 3)
+        self.assertLess(body.index("How to use it"), body.index("01. A"))
+        self.assertLess(body.index("02. B"), body.index("How it is built"))
+        self.assertLess(body.index("How it is built"), body.index("03. C"))
+        self.assertEqual(dossier.load(self.did)[0]["parts_done"], ["use", "built_syllabus"])
+
+    def test_syllabus_body_spanish_headings(self):
+        did, _meta, base = make("es", "https://otro.example.org/docs")
+        run_script("set-mode", did, "use-internals")
+        code, out = run_script("save-syllabus", did, stdin=sj(
+            {"topics": [stopic("a"), stopic("c", part="internals")]}))
+        self.assertEqual(code, 0, out)
+        names = dossier.load(did)[0]["names"]
+        _, body = frontmatter.parse((base / names["syllabus"]).read_text(encoding="utf-8"))
+        self.assertIn("Cómo se usa", body)
+        self.assertIn("Cómo está construida", body)
+
+    def test_syllabus_internals_rejected_in_mode_use(self):
+        code, out = self.syl(stopic("a"), stopic("c", part="internals"))
+        self.assertEqual((code, out["error"]["code"]), (2, "part_not_in_mode"))
+
+    def test_syllabus_blocked_in_overview_modes(self):
+        run_script("set-mode", self.did, "overview")
+        code, out = self.syl(stopic("a"))
+        self.assertEqual((code, out["error"]["code"]), (2, "part_not_in_mode"))
+
+    def test_syllabus_use_after_internals_rejected(self):
+        run_script("set-mode", self.did, "use-internals")
+        code, out = self.syl(stopic("c", part="internals"), stopic("a"))
+        self.assertEqual((code, out["error"]["code"]), (2, "bad_input"))
+        self.assertIn("use topics come first", out["error"]["message"])
+
+    def test_syllabus_internals_without_public_code(self):
+        run_script("set-mode", self.did, "use-internals")
+        meta, _ = dossier.load(self.did)
+        meta["public_code"] = False
+        dossier.save(self.did, meta)
+        code, out = self.syl(stopic("a"), stopic("c", part="internals"))
+        self.assertEqual((code, out["error"]["code"]), (2, "no_public_code"))
+
+    def test_appending_internals_keeps_use_numbers_and_progress(self):
+        self.syl(stopic("a"), stopic("b"), stopic("c"))
+        self.assertEqual(self.topic(tdata("b"))[0], 0)
+        prog = self.base / self.n["progress"]
+        head = {"teach_me": "progress", "current": None, "last_session": None, "reviews": [],
+                "topics": {"b": {"status": "passed", "best": 90, "asked": [], "outdated": False,
+                                 "attempts": [{"attempt": 1, "average": 90, "passed": True,
+                                               "date": "2026-01-01"}],
+                                 "doubts": ["why?"]}}}
+        prog.write_text(frontmatter.dump(head, "x"), encoding="utf-8")
+        run_script("set-mode", self.did, "use-internals")
+        code, out = self.syl(stopic("a"), stopic("b"), stopic("c"),
+                             stopic("d", part="internals"), stopic("e", part="internals"))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.tfiles(), ["02-b.md"])
+        code, shown = run_script("progress", self.did, "show")
+        self.assertEqual([(t["number"], t["slug"]) for t in shown["topics"]][:3],
+                         [(1, "a"), (2, "b"), (3, "c")])
+        self.assertEqual(shown["topics"][1]["status"], "passed")
+        t = frontmatter.parse(prog.read_text(encoding="utf-8"))[0]["topics"]["b"]
+        self.assertEqual((len(t["attempts"]), t["doubts"]), (1, ["why?"]))
+
+    def test_resave_keeps_set_aside_topics(self):
+        run_script("set-mode", self.did, "use-internals")
+        self.syl(stopic("a"), stopic("c", part="internals"), )
+        run_script("set-mode", self.did, "use")
+        code, out = self.syl(stopic("a"), stopic("b"))
+        self.assertEqual(code, 0, out)
+        meta, body = frontmatter.parse((self.base / self.n["syllabus"]).read_text(encoding="utf-8"))
+        self.assertEqual([(t["number"], t["slug"], t["part"]) for t in meta["topics"]],
+                         [(1, "a", "use"), (2, "b", "use"), (3, "c", "internals")])
+        self.assertIn("[[03-c]]", body)
+        self.assertEqual([t["slug"] for t in out["topics"]], ["a", "b"])
+        self.assertEqual(dossier.load(self.did)[0]["parts_done"], ["use", "built_syllabus"])
+
+    def test_save_topic_on_set_aside_topic_blocks(self):
+        run_script("set-mode", self.did, "use-internals")
+        self.syl(stopic("a"), stopic("c", part="internals"))
+        run_script("set-mode", self.did, "use")
+        code, out = self.topic(tdata("c"))
+        self.assertEqual((code, out["error"]["code"]), (2, "part_not_in_mode"))
+        self.assertEqual(self.tfiles(), [])
+        self.assertEqual(self.topic(tdata("a"))[0], 0)
+
 
 class TopicTest(TopicsBase):
     def setUp(self):

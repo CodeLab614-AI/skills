@@ -40,6 +40,21 @@ def syllabus_parts(mode: str) -> tuple:
     return SYLLABUS_PARTS[mode]
 
 
+def is_set_aside(meta: dict, topic: dict) -> bool:
+    """A syllabus topic is set aside when its part is not one of the current mode's;
+    a topic without a part (older data) counts as `use`."""
+    part = topic.get("part") if isinstance(topic.get("part"), str) else "use"
+    return part not in syllabus_parts(meta.get("mode", "use"))
+
+
+def require_in_mode(meta: dict, topic: dict) -> None:
+    from .errors import BlockedError
+    if is_set_aside(meta, topic):
+        raise BlockedError("part_not_in_mode",
+                           "Topic %r is set aside in mode %r; switch mode to work on it."
+                           % (topic.get("slug"), meta.get("mode")))
+
+
 def needs_public_code(mode: str) -> bool:
     _check(mode)
     return mode in _INTERNALS
