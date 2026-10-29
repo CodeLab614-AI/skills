@@ -30,7 +30,13 @@ Steps:
 4. Run: python3 "<SKILL_DIR>/scripts/teach_me.py" excerpts <id> with {"claims": [...]} on
    stdin. Remove or fix the claims it lists as unverified, or keep them and mark them
    "verified": false.
-5. Reply with this JSON and nothing else.
+5. If the answer needs code that is not saved, read the front matter of
+   <home>/<id>/<sources>/<code>/<label>/_inventory.md (the names come from the profile; by
+   default sources/code/<label>/ or the translated names). Its `skipped` list holds
+   {"path", "reason": "not_saved"} entries: the folders or files of the repository that were
+   not saved. If found is false because of that, reply with the not_saved paths that could
+   hold the answer (never invent paths that are not in that list).
+6. Reply with this JSON and nothing else.
 
 {"found": true,
  "answer": "short answer in the language of the question",
@@ -39,6 +45,8 @@ Steps:
  "unverified": [indices of claims that could not be verified]}
 
 If nothing in the dossier answers it: {"found": false, "answer": "", "claims": [], "unverified": []}
+If it could be answered from code that was not saved:
+{"found": false, "answer": "", "claims": [], "unverified": [], "not_saved": ["<path>", ...]}
 
 QUESTION: <question>
 ```
@@ -48,5 +56,6 @@ QUESTION: <question>
 - Explain the answer in the person's language from the JSON, without re-reading the docs, and name the source of each statement (page or `file:line`).
 - Show any claim listed in `unverified` with a warning sign and say it could not be verified; never present it as fact.
 - If `found` is `false`, say "I did not bring that" (in the person's language), offer to download the exact page with `fetch-docs <id> --url <url>`, and after it succeeds repeat the consult. Do not answer from memory.
+- If `found` is `false` and the answer has `not_saved` paths, offer the person to download that folder or file with `fetch-code <id> --path <path>`, and after it succeeds repeat the consult.
 - Record the doubt with `progress <id> doubt --topic <slug>` (text on stdin).
 - Without subagents, run `search` yourself and read only the returned fragments; the rule of not re-reading the whole documentation still holds.

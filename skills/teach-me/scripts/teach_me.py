@@ -78,6 +78,10 @@ def _cmd_fetch_docs(args) -> dict:
 
 
 def _cmd_fetch_code(args) -> dict:
+    if args.path is not None:
+        return code.fetch_path(args.id, args.path, args.repo, args.ref)
+    if not args.repo or not args.ref:
+        raise BlockedError("bad_input", "fetch-code needs --repo and --ref (or --path to add a folder to saved code).")
     return code.fetch(args.id, args.repo, args.ref)
 
 
@@ -198,8 +202,9 @@ def _register() -> None:
 
     def cfg_fetch_code(p):
         p.add_argument("id")
-        p.add_argument("--repo", required=True)
-        p.add_argument("--ref", required=True)
+        p.add_argument("--repo")
+        p.add_argument("--ref")
+        p.add_argument("--path")
 
     def cfg_search(p):
         p.add_argument("id")

@@ -64,6 +64,7 @@ Phases, in order; each one is recorded in the profile so a cut research resumes:
 - Code you read, by priority in mode `use`: package exports and entry point, public types, examples, usage tests, changelog.
 - If the docs and the code disagree, **the code wins** and the discrepancy goes into the coverage.
 - Declare in the coverage what was read, what was left out, and every page that failed.
+- In mode `use`, if the repository is a monorepo, `fetch-code` keeps only the root files (README, LICENSE, CHANGELOG, `package.json`, `pyproject.toml`), the main package and up to 300 examples that import it. Everything else is listed in the coverage as `not_saved`.
 
 ## 5. Syllabus
 
@@ -82,7 +83,7 @@ Write the syllabus from what was downloaded and send it to `python3 "<SKILL_DIR>
 
 Record each doubt: `python3 "<SKILL_DIR>/scripts/teach_me.py" progress <id> doubt --topic <slug>` with the doubt text on stdin (plain text, not JSON). It becomes a hint for the exam.
 
-Then answer it with the **consult worker**, following [references/consult.md](references/consult.md). It only receives the question, the dossier id and that reference; it searches with `python3 "<SKILL_DIR>/scripts/teach_me.py" search`, reads only the returned fragments and returns `{"found", "answer", "claims"}`. You explain from that result without re-reading the docs. Anything it could not verify is shown with a warning sign and never as a fact. If `found` is `false`, say "I did not bring that" (in the person's language), offer to download the page with `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-docs <id> --url <url>`, and repeat the consult.
+Then answer it with the **consult worker**, following [references/consult.md](references/consult.md). It only receives the question, the dossier id and that reference; it searches with `python3 "<SKILL_DIR>/scripts/teach_me.py" search`, reads only the returned fragments and returns `{"found", "answer", "claims"}`. You explain from that result without re-reading the docs. Anything it could not verify is shown with a warning sign and never as a fact. If `found` is `false`, say "I did not bring that" (in the person's language), offer to download the page with `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-docs <id> --url <url>`, and repeat the consult. If the consult also returns `not_saved` paths (code that exists in the repository but was not saved), offer the person to download that folder or file with `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-code <id> --path <path>` and, after it succeeds, repeat the consult.
 
 ## 8. Exam (end of each topic)
 
