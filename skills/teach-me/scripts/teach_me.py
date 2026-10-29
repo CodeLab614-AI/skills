@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, config, docs, dossier, exams, meta, modes, progress, search, sources, store, topics, update  # noqa: E402
+from teach_me_lib import code, competitors, config, docs, dossier, exams, meta, modes, progress, search, sources, store, topics, update  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -67,6 +67,13 @@ def _cmd_set_mode(args) -> dict:
 
 def _cmd_fetch_meta(args) -> dict:
     return meta.fetch_meta(args.id, args.npm, args.pypi, args.repo)
+
+
+def _cmd_search_packages(args) -> dict:
+    if bool(args.npm) == bool(args.pypi):
+        raise BlockedError("bad_input", "Give --npm or --pypi (exactly one).")
+    registry, text = ("npm", args.npm) if args.npm else ("pypi", args.pypi)
+    return competitors.search_packages(args.id, registry, text, args.size)
 
 
 def _cmd_update_profile(args) -> dict:
@@ -195,6 +202,12 @@ def _register() -> None:
         p.add_argument("--pypi")
         p.add_argument("--repo")
 
+    def cfg_search_packages(p):
+        p.add_argument("id")
+        p.add_argument("--npm")
+        p.add_argument("--pypi")
+        p.add_argument("--size", type=int, default=10)
+
     def cfg_discover_docs(p):
         p.add_argument("id")
         p.add_argument("docs_url")
@@ -239,6 +252,7 @@ def _register() -> None:
     COMMANDS["discover-docs"] = (cfg_discover_docs, _cmd_discover_docs)
     COMMANDS["fetch-docs"] = (cfg_fetch_docs, _cmd_fetch_docs)
     COMMANDS["fetch-meta"] = (cfg_fetch_meta, _cmd_fetch_meta)
+    COMMANDS["search-packages"] = (cfg_search_packages, _cmd_search_packages)
     COMMANDS["update-profile"] = (lambda p: p.add_argument("id"), _cmd_update_profile)
     COMMANDS["init"] = (cfg_init, _cmd_init)
     COMMANDS["discard"] = (lambda p: p.add_argument("id"), _cmd_discard)
