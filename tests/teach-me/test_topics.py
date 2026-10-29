@@ -49,6 +49,7 @@ def blocks(**over):
                    "sources": [cite()]}]
         out.append({"kind": k, "claims": claims})
     out[2]["code"] = "const x = 1;"
+    out[2]["code_support"] = "supported"
     for k, v in over.items():
         for b in out:
             if b["kind"] == k:
@@ -203,6 +204,43 @@ class TopicTest(TopicsBase):
         b = blocks()
         b[3]["claims"][0].update(kind="pedagogical", support="unsupported")
         self.err(tdata("intro", blocks=b), "unsupported_claims")
+
+    def test_code_needs_support_verdict(self):
+        b = blocks()
+        del b[2]["code_support"]
+        b[3]["code"] = "print(1)"
+        out = self.err(tdata("intro", blocks=b), "support_not_checked")
+        self.assertIn("example, predict", out["error"]["message"])
+
+    def test_code_unsupported_is_refused(self):
+        b = blocks()
+        b[2]["code_support"] = "unsupported"
+        out = self.err(tdata("intro", blocks=b), "unsupported_claims")
+        self.assertIn("example", out["error"]["message"])
+
+    def test_missing_verdicts_come_before_unsupported(self):
+        b = blocks()
+        b[2]["code_support"] = "unsupported"
+        b[3]["code"] = "print(1)"
+        self.err(tdata("intro", blocks=b), "support_not_checked")
+
+    def test_code_supported_is_saved_with_verdict(self):
+        code, out = self.topic(tdata("intro"))
+        self.assertEqual(code, 0, out)
+        meta, _ = frontmatter.parse((self.base / self.n["topics_dir"] / "01-intro.md").read_text(encoding="utf-8"))
+        ex = meta["blocks"][2]
+        self.assertEqual((ex["code"], ex["code_support"]), ("const x = 1;", "supported"))
+
+    def test_code_support_ignored_without_code(self):
+        b = blocks()
+        b[0]["code_support"] = "unsupported"
+        b[3]["code"] = ""
+        code, out = self.topic(tdata("intro", blocks=b))
+        self.assertEqual(code, 0, out)
+        meta, _ = frontmatter.parse((self.base / self.n["topics_dir"] / "01-intro.md").read_text(encoding="utf-8"))
+        self.assertNotIn("code_support", meta["blocks"][0])
+        self.assertNotIn("code_support", meta["blocks"][3])
+        self.assertNotIn("code", meta["blocks"][3])
 
     def test_topic_rejects_unverified_citation(self):
         b = blocks()

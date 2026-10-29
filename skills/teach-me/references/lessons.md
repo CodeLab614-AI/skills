@@ -27,14 +27,14 @@ Written when the topic starts, from what was already downloaded (use `search`, t
  "blocks": [
   {"kind": "problem",   "claims": [...]},
   {"kind": "idea",      "claims": [...]},
-  {"kind": "example",   "claims": [...], "code": "minimal runnable example"},
-  {"kind": "predict",   "claims": [...], "code": "snippet whose output the person predicts"},
+  {"kind": "example",   "claims": [...], "code": "minimal runnable example", "code_support": "supported"},
+  {"kind": "predict",   "claims": [...], "code": "snippet whose output the person predicts", "code_support": "supported"},
   {"kind": "internals", "claims": [...]},
   {"kind": "pitfalls",  "claims": [...]}
  ]}
 ```
 
-Exactly these six blocks, in this order, each with at least one claim. `code` is optional and is shown as written, so it must come from or be consistent with the sources (cite where it comes from in a claim). Links to other topics and to the syllabus are written by the script.
+Exactly these six blocks, in this order, each with at least one claim. `code` is optional; every block with code needs `code_support` from the support worker (see sources.md), and the code must use only what the excerpts of that block show (cite where it comes from in a claim of that block). Links to other topics and to the syllabus are written by the script.
 
 ## Teaching the six blocks
 

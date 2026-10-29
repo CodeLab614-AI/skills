@@ -200,7 +200,7 @@ def _check_support(data: dict) -> None:
     if data.get("support_checked_in") not in ("subagent", "same_conversation"):
         raise BlockedError("support_not_checked",
                            "support_checked_in must be 'subagent' or 'same_conversation'.")
-    missing, unsupported = [], []
+    missing, unsupported, code_missing, code_bad = [], [], [], []
     for block in data["blocks"]:
         for j, claim in enumerate(block["claims"]):
             where = "%s[%d]" % (block["kind"], j)
@@ -210,12 +210,27 @@ def _check_support(data: dict) -> None:
                     missing.append(where)
             elif verdict != "supported":
                 unsupported.append(where)
-    if missing:
-        raise BlockedError("support_not_checked",
-                           "Fact claims without a support verdict: %s." % ", ".join(missing))
-    if unsupported:
-        raise BlockedError("unsupported_claims",
-                           "Unsupported or invalid verdicts, fix or remove: %s." % ", ".join(unsupported))
+        if block.get("code"):
+            verdict = block.get("code_support")
+            if verdict is None:
+                code_missing.append(block["kind"])
+            elif verdict != "supported":
+                code_bad.append(block["kind"])
+    if missing or code_missing:
+        parts = []
+        if missing:
+            parts.append("Fact claims without a support verdict: %s." % ", ".join(missing))
+        if code_missing:
+            parts.append("Code blocks without a support verdict: %s." % ", ".join(code_missing))
+        raise BlockedError("support_not_checked", " ".join(parts))
+    if unsupported or code_bad:
+        parts = []
+        if unsupported:
+            parts.append("Unsupported or invalid verdicts, fix or remove: %s." % ", ".join(unsupported))
+        if code_bad:
+            parts.append("Code blocks unsupported or with an invalid verdict, fix or remove: %s."
+                         % ", ".join(code_bad))
+        raise BlockedError("unsupported_claims", " ".join(parts))
 
 
 def _source_line(cite: dict) -> str:
@@ -289,6 +304,7 @@ def save_topic(dossier_id: str, data) -> dict:
             k += len(b["claims"])
             if b.get("code"):
                 item["code"] = b["code"]
+                item["code_support"] = b["code_support"]
             out_blocks.append(item)
         head = {"teach_me": "topic", "number": entry["number"], "slug": entry["slug"],
                 "title": entry["title"], "depends_on": list(entry.get("depends_on", [])),
