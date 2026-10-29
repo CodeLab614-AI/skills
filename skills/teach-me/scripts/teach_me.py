@@ -93,6 +93,10 @@ def _cmd_fetch_docs(args) -> dict:
 
 
 def _cmd_fetch_code(args) -> dict:
+    if args.full and args.path is not None:
+        raise BlockedError("bad_input", "Give --full or --path, not both.")
+    if args.full:
+        return code.fetch_full(args.id, args.repo, args.ref)
     if args.path is not None:
         return code.fetch_path(args.id, args.path, args.repo, args.ref)
     if not args.repo or not args.ref:
@@ -244,6 +248,7 @@ def _register() -> None:
         p.add_argument("--repo")
         p.add_argument("--ref")
         p.add_argument("--path")
+        p.add_argument("--full", action="store_true")
 
     def cfg_search(p):
         p.add_argument("id")

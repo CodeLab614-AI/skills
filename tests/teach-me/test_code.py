@@ -706,6 +706,101 @@ class FetchPathTests(unittest.TestCase):
             self.assertEqual(reasons["packages/openai/node_modules"], "ignored_dir")
 
 
+FULL_ENTRIES = NPM_MONO + [
+    ("m/tools/zzfullonly.ts", "file", "export const zzfullonlytoken = 1;\n"),
+    ("m/tools/blob.bin", "file", b"a\x00b"),
+]
+
+
+class FullTests(unittest.TestCase):
+    def mode(self, did, mode):
+        code, res = run_script("set-mode", did, mode)
+        self.assertEqual(code, 0, res)
+
+    def light(self, srv, entries=FULL_ENTRIES):
+        did = mono_setup(srv)
+        self.mode(did, "use")
+        code, out = fetch(srv, did, ref="v1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["layout"], "monorepo")
+        return did, out
+
+    def test_internals_mode_saves_the_whole_monorepo(self):
+        with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(FULL_ENTRIES))}) as srv, TempHome():
+            did = mono_setup(srv)
+            self.mode(did, "overview-internals")
+            code, out = fetch(srv, did, ref="v1")
+            self.assertEqual(code, 0, out)
+            self.assertEqual(out["layout"], "full")
+            self.assertNotIn("package_dir", out)
+            dest = Path(out["path"])
+            self.assertTrue((dest / "packages/openai/src/index.ts").is_file())
+            self.assertTrue((dest / "tools/zzfullonly.ts").is_file())
+            self.assertFalse((dest / "tools/blob.bin").exists())
+            head = head_of(out)
+            self.assertEqual(head["layout"], "full")
+            self.assertEqual(head["skipped"], [])
+            self.assertEqual(not_saved(dossier.load(did)[0]), [])
+            self.assertIn("binary", out["skipped_by_reason"])
+            code, again = fetch(srv, did, ref="v1")
+            self.assertEqual(again["layout"], "full")
+            self.assertEqual(len(srv.requests), 1)
+
+    def test_full_adds_the_rest_without_touching_saved_files(self):
+        from teach_me_lib import search
+        with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(FULL_ENTRIES))}) as srv, TempHome():
+            did, out = self.light(srv)
+            dest = Path(out["path"])
+            self.assertFalse((dest / "tools").exists())
+            mine = dest / "packages/ai/src/index.ts"
+            mine.write_text("// edited on disk\n", encoding="utf-8")
+            self.mode(did, "use-internals")
+            code, res = run_script("fetch-code", did, "--full", env=srv.env())
+            self.assertEqual(code, 0, res)
+            self.assertEqual(res["layout"], "full")
+            self.assertGreater(res["added"], 0)
+            self.assertEqual(mine.read_text(encoding="utf-8"), "// edited on disk\n")
+            self.assertTrue((dest / "tools/zzfullonly.ts").is_file())
+            head = head_of(out)
+            self.assertEqual(head["layout"], "full")
+            self.assertEqual(head["skipped"], [])
+            self.assertNotIn("not_saved", head["skipped_by_reason"])
+            self.assertNotIn("package_dir", head)
+            self.assertEqual((head["repo"], head["ref"]), ("acme/lib", "v1"))
+            self.assertEqual(res["files"], len(head["files"]))
+            self.assertEqual(not_saved(dossier.load(did)[0]), [])
+            found = search.query(did, "zzfullonlytoken")
+            self.assertTrue(any(r["citation"].get("path") == "tools/zzfullonly.ts" for r in found["results"]))
+            code, again = run_script("fetch-code", did, "--full", env=srv.env())
+            self.assertEqual(again, {"ok": True, "added": 0, "already": True})
+
+    def test_full_on_single_layout_does_nothing(self):
+        with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(BASIC))}) as srv, TempHome():
+            did = setup(srv, {"kind": "package", "value": "1.0.0", "label": "lib_1.0.0"})
+            code, out = fetch(srv, did, ref="v1")
+            self.assertEqual(out["layout"], "single")
+            code, res = run_script("fetch-code", did, "--full", env=srv.env())
+            self.assertEqual(code, 0, res)
+            self.assertEqual(res, {"ok": True, "added": 0, "already": True})
+            self.assertEqual(len(srv.requests), 1)
+
+    def test_full_without_saved_code_blocks(self):
+        with FixtureServer({}) as srv, TempHome():
+            did = setup(srv, {"kind": "package", "value": "1.0.0", "label": "lib_1.0.0"})
+            code, res = run_script("fetch-code", did, "--full", env=srv.env())
+            self.assertEqual(code, 2)
+            self.assertEqual(res["error"]["code"], "bad_input")
+            self.assertIn("fetch-code", res["error"]["message"])
+            self.assertEqual(len(srv.requests), 0)
+
+    def test_full_and_path_together_rejected(self):
+        with FixtureServer({}) as srv, TempHome():
+            did = setup(srv)
+            code, res = run_script("fetch-code", did, "--full", "--path", "src", env=srv.env())
+            self.assertEqual(code, 2)
+            self.assertEqual(res["error"]["code"], "bad_input")
+
+
 class DownloadTests(unittest.TestCase):
     def test_download_streams_and_caps(self):
         routes = {"/f": (200, "application/octet-stream", b"x" * 5000)}

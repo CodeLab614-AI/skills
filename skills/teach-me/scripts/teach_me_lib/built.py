@@ -55,13 +55,7 @@ def _body(meta: dict, head: dict) -> str:
 
 
 def _code_saved(meta: dict) -> bool:
-    version = meta.get("version")
-    label = version.get("label") if isinstance(version, dict) else None
-    if not isinstance(label, str) or not label:
-        return False
-    names = meta["names"]
-    final = store.dossier_dir(meta["id"]) / names["sources_dir"] / names["code_dir"] / label
-    return code._read_inventory(final) is not None
+    return code.saved_inventory(meta) is not None
 
 
 def save_built(dossier_id: str, data) -> dict:

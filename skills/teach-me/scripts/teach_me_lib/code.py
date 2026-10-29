@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-from . import dossier, frontmatter, meta as meta_mod, net, store
+from . import dossier, frontmatter, meta as meta_mod, modes, net, store
 from .errors import BlockedError
 
 MAX_TARBALL = 300 * 1024 * 1024
@@ -383,6 +383,16 @@ def _read_inventory(final: Path) -> "dict | None":
     return head if isinstance(head.get("files"), list) else None
 
 
+def saved_inventory(meta: dict) -> "dict | None":
+    """Inventory header of the code saved for the current version, None without one."""
+    version = meta.get("version")
+    label = version.get("label") if isinstance(version, dict) else None
+    if not isinstance(label, str) or not label:
+        return None
+    names = meta["names"]
+    return _read_inventory(store.dossier_dir(meta["id"]) / names["sources_dir"] / names["code_dir"] / label)
+
+
 def _done(final: Path) -> "dict | None":
     head = _read_inventory(final)
     if head is None:
@@ -391,7 +401,7 @@ def _done(final: Path) -> "dict | None":
     out = {"ok": True, "files": len(head["files"]),
            "skipped_by_reason": counts if isinstance(counts, dict) else {},
            "path": str(final.resolve()),
-           "layout": head.get("layout") if head.get("layout") in ("single", "monorepo") else "single"}
+           "layout": head.get("layout") if head.get("layout") in ("single", "monorepo", "full") else "single"}
     if out["layout"] == "monorepo" and isinstance(head.get("package_dir"), str):
         out["package_dir"] = head["package_dir"]
     return out
@@ -450,7 +460,10 @@ def fetch(dossier_id: str, repo: str, ref: str) -> dict:
     tmp = Path(tmp_name)
     try:
         _download(slug, ref, folder, tmp)
-        plan = _plan(tmp, _package_of(profile))
+        if modes.needs_full_code(profile.get("mode", "use")):
+            plan = {"layout": "full", "select": None, "notices": []}  # the internals modes save it all
+        else:
+            plan = _plan(tmp, _package_of(profile))
         with store.locked(dossier_id):
             done = _done(final)
             if done is not None:
@@ -520,9 +533,9 @@ _NEEDS_REPO_REF = ("The code of this version has no recorded repository and ref 
                    "before they were kept): pass --repo and --ref together with --path.")
 
 
-def fetch_path(dossier_id: str, path: str, repo: "str | None" = None, ref: "str | None" = None) -> dict:
-    """Download the same version again and save only one folder or file into it."""
-    rel_path = _normalize_path(path)
+def _saved_target(dossier_id: str, repo, ref) -> tuple:
+    """(profile, folder, final, head, slug, ref, label) of the code already saved for the
+    current version; `repo`/`ref` override what the inventory recorded."""
     dossier.require(dossier_id)
     profile, _ = dossier.load(dossier_id)
     version = profile.get("version") if isinstance(profile.get("version"), dict) else {}
@@ -534,8 +547,7 @@ def fetch_path(dossier_id: str, path: str, repo: "str | None" = None, ref: "str 
     else:
         raise BlockedError("bad_input", _NO_CODE)
     folder = store.dossier_dir(dossier_id)
-    code_dir = folder / profile["names"]["sources_dir"] / profile["names"]["code_dir"]
-    final = code_dir / label
+    final = folder / profile["names"]["sources_dir"] / profile["names"]["code_dir"] / label
     head = _read_inventory(final)
     if head is None:
         raise BlockedError("bad_input", _NO_CODE)
@@ -543,8 +555,15 @@ def fetch_path(dossier_id: str, path: str, repo: "str | None" = None, ref: "str 
     use_ref = ref or head.get("ref")
     if not isinstance(use_repo, str) or not use_repo or not isinstance(use_ref, str) or not use_ref:
         raise BlockedError("bad_input", _NEEDS_REPO_REF)
-    slug = meta_mod._repo_slug(use_repo)
+    return folder, final, meta_mod._repo_slug(use_repo), use_ref, label
 
+
+def _grow(dossier_id: str, target: tuple, select, covered, keep: tuple, layout=None,
+          missing: "str | None" = None) -> dict:
+    """Download the same version again and add what `select` picks to the saved code, leaving
+    saved files alone. `covered(path)` says which not_saved entries this call settles; `keep`
+    are the inventory keys carried over (plus `layout` when given). Rolls back on failure."""
+    folder, final, slug, use_ref, label = target
     fd, tmp_name = tempfile.mkstemp(dir=str(folder), prefix=".tmp-code-", suffix=".tar.gz")
     os.close(fd)
     tmp = Path(tmp_name)
@@ -557,19 +576,17 @@ def fetch_path(dossier_id: str, path: str, repo: "str | None" = None, ref: "str 
                 raise BlockedError("bad_input", _NO_CODE)
             old_files = [f for f in head.get("files", []) if isinstance(f, dict)]
             try:
-                res = _extract(tmp, final, lambda r, parts, m: _under(r, rel_path),
-                               fresh=False, only_new=True)
+                res = _extract(tmp, final, select, fresh=False, only_new=True)
                 created = res["created"]
-                if not res["found"]:
-                    raise BlockedError("path_not_found", "Nothing at or under %r exists in %s at ref %r."
-                                       % (rel_path, slug, use_ref))
+                if missing and not res["found"]:
+                    raise BlockedError("path_not_found", missing % (slug, use_ref))
                 by_path = {f["path"]: f for f in old_files if isinstance(f.get("path"), str)}
                 for f in res["files"]:
                     by_path[f["path"]] = f
                 files = [by_path[k] for k in sorted(by_path)]
                 kept = [e for e in head.get("skipped", []) if isinstance(e, dict)
                         and not (e.get("reason") == "not_saved" and isinstance(e.get("path"), str)
-                                 and _under(e["path"], rel_path))]
+                                 and covered(e["path"]))]
                 removed = len(head.get("skipped", [])) - len(kept) if isinstance(head.get("skipped"), list) else 0
                 profile, _ = dossier.load(dossier_id)
                 cov = profile.setdefault("coverage", {"read": [], "skipped": [], "not_downloaded": []})
@@ -577,7 +594,7 @@ def fetch_path(dossier_id: str, path: str, repo: "str | None" = None, ref: "str 
                 cov["skipped"] = current = [
                     e for e in current if not (isinstance(e, dict) and e.get("reason") == "not_saved"
                                                and isinstance(e.get("path"), str)
-                                               and _under(e["path"], rel_path))]
+                                               and covered(e["path"]))]
                 counts = dict(head.get("skipped_by_reason") or {})
                 counts["not_saved"] = counts.get("not_saved", 0) - removed
                 for entry in res["skipped"]:
@@ -585,7 +602,9 @@ def fetch_path(dossier_id: str, path: str, repo: "str | None" = None, ref: "str 
                         current.append(entry)
                         counts[entry["reason"]] = counts.get(entry["reason"], 0) + 1
                 counts = {k: v for k, v in counts.items() if v > 0}
-                info = {k: head[k] for k in ("layout", "package_dir") if k in head}
+                info = {k: head[k] for k in keep if k in head}
+                if layout:
+                    info["layout"] = layout
                 info = dict({"repo": slug, "ref": use_ref}, **info)
                 _write_inventory(final, files, counts, info, kept)
                 version = profile.get("version")
@@ -597,16 +616,39 @@ def fetch_path(dossier_id: str, path: str, repo: "str | None" = None, ref: "str 
                 profile["public_code"] = True
                 dossier.save(dossier_id, profile)
             except BaseException:
-                for target in created:
+                for target_file in created:
                     try:
-                        target.unlink()
+                        target_file.unlink()
                     except OSError:
                         pass
                 raise
-        return {"ok": True, "files": len(res["files"]), "path": str(final.resolve()),
-                "saved_path": rel_path, "skipped_by_reason": counts}
+        return {"res": res, "files": files, "counts": counts, "path": str(final.resolve())}
     finally:
         try:
             tmp.unlink()
         except OSError:
             pass
+
+
+def fetch_path(dossier_id: str, path: str, repo: "str | None" = None, ref: "str | None" = None) -> dict:
+    """Download the same version again and save only one folder or file into it."""
+    rel_path = _normalize_path(path)
+    target = _saved_target(dossier_id, repo, ref)
+    out = _grow(dossier_id, target, lambda r, parts, m: _under(r, rel_path),
+                lambda p: _under(p, rel_path), ("layout", "package_dir"),
+                missing="Nothing at or under %r exists in %%s at ref %%r." % rel_path)
+    return {"ok": True, "files": len(out["res"]["files"]), "path": out["path"],
+            "saved_path": rel_path, "skipped_by_reason": out["counts"]}
+
+
+def fetch_full(dossier_id: str, repo: "str | None" = None, ref: "str | None" = None) -> dict:
+    """Add every file the first fetch left out; layouts that already hold all of it are done."""
+    dossier.require(dossier_id)
+    profile, _ = dossier.load(dossier_id)
+    head = saved_inventory(profile)
+    if head is None:
+        raise BlockedError("bad_input", _NO_CODE)
+    if head.get("layout") in (None, "single", "full"):
+        return {"ok": True, "added": 0, "already": True}
+    out = _grow(dossier_id, _saved_target(dossier_id, repo, ref), None, lambda p: True, (), layout="full")
+    return {"ok": True, "added": len(out["res"]["files"]), "files": len(out["files"]), "layout": "full"}

@@ -82,14 +82,8 @@ def set_aside_parts(meta: dict, mode: str) -> list:
 
 def _saved_layout(meta: dict) -> "str | None":
     """`layout` from the code inventory of the current version, None without one."""
-    from . import code, store
-    version = meta.get("version")
-    label = version.get("label") if isinstance(version, dict) else None
-    if not isinstance(label, str) or not label:
-        return None
-    names = meta["names"]
-    final = store.dossier_dir(meta["id"]) / names["sources_dir"] / names["code_dir"] / label
-    head = code._read_inventory(final)
+    from . import code
+    head = code.saved_inventory(meta)
     return head.get("layout") if head else None
 
 
