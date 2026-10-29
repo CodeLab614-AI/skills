@@ -66,6 +66,12 @@ class OverviewBase(unittest.TestCase):
 
 
 class OverviewTests(OverviewBase):
+    def test_competitor_match_ignores_case_and_keeps_the_row(self):
+        code, out = self.save(payload(rows=[row("Acme/Widget")]))
+        self.assertEqual(code, 0, out)
+        head, _ = frontmatter.parse(self.text())
+        self.assertEqual(head["sections"][4]["rows"][0]["competitor"], "Acme/Widget")
+
     def test_save_overview_writes_six_sections_in_es(self):
         data = payload()
         data["sections"][4]["rows"][0]["one_liner"]["text"] = "Licencia GPL, versión 9.9"

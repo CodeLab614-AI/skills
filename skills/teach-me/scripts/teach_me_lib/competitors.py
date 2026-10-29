@@ -8,6 +8,7 @@ from . import dossier, docs, meta, net, store, urls
 from .errors import BlockedError
 
 README_LIMIT = 1024 * 1024
+STALE_SUFFIXES = ("npm.md", "pypi.md", "github.md", "github-commit.md", "github-readme.md")
 
 PYPI_NO_SEARCH = ("PyPI has no search API; find candidates in the docs, the README or with the "
                   "agent's web search.")
@@ -111,11 +112,12 @@ def fetch_competitor(dossier_id: str, repo: str, npm: "str | None", pypi: "str |
         readme_url = got[0].get("download_url") if isinstance(got[0], dict) else None
         files["github-readme.md"] = meta._meta_markdown(got[2], got[1])
     if readme_url:
-        resp = net.get(readme_url, README_LIMIT)
-        if resp.status == 200:
+        try:
+            resp = net.get(readme_url, README_LIMIT)
+        except BlockedError:
+            resp = None
+        if resp is not None and resp.status == 200:
             readme_text = docs._decode(resp.body, resp.content_type)
-        elif resp.status != 404:
-            raise BlockedError("fetch_failed", "The README of %s answered HTTP %d." % (slug, resp.status))
     if readme_text is None:
         readme_url = None
         notices.append("no_readme")
@@ -139,6 +141,9 @@ def fetch_competitor(dossier_id: str, repo: str, npm: "str | None", pypi: "str |
             docs.store_page(dossier_id, docs.clean_url(readme_url) or readme_url, readme_text, "md")
         meta_dir = folder / profile["names"]["sources_dir"] / profile["names"]["meta_dir"]
         meta_dir.mkdir(parents=True, exist_ok=True)
+        # only this competitor's files (a prefix glob would also catch acme/widget-extra)
+        for suffix in STALE_SUFFIXES:
+            (meta_dir / (prefix + suffix)).unlink(missing_ok=True)
         for name, body in files.items():
             store.atomic_write(meta_dir / (prefix + name), body)
         found = profile.get("competitors")

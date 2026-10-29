@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import dossier, frontmatter, modes, progress, sources, store, support
+from . import code, dossier, frontmatter, modes, progress, sources, store, support
 from .errors import BlockedError
 
 BLOCK_KINDS = ("problem", "idea", "example", "predict", "internals", "pitfalls")
@@ -142,6 +142,10 @@ def save_syllabus(dossier_id: str, data) -> dict:
         if any(t["part"] == "internals" for t in items) and meta.get("public_code") is False:
             raise BlockedError("no_public_code",
                                "This library has no public code, so it has no built syllabus.")
+        if any(t["part"] == "internals" for t in items):
+            inv = code.saved_inventory(meta)
+            if inv is not None and inv.get("layout") == "monorepo":
+                raise BlockedError("code_not_full", code._NOT_FULL)
         wrapped = [{"text": t["title"], "kind": "fact", "sources": t["sources"]} for t in items]
         resolved, bad = sources.check_claims(dossier_id, wrapped)
         if bad:
@@ -168,6 +172,8 @@ def save_syllabus(dossier_id: str, data) -> dict:
         parts = list(meta.get("parts_done") or [])
         sent = ["use"] + (["built_syllabus"] if any(t["part"] == "internals" for t in items) else [])
         parts += [p for p in sent if p not in parts]
+        if "internals" in allowed and not any(t.get("part") == "internals" for t in topics):
+            parts = [p for p in parts if p != "built_syllabus"]
         meta["parts_done"] = parts
         meta["status"] = "ready"
         meta.setdefault("phases", {})["syllabus"] = _now()

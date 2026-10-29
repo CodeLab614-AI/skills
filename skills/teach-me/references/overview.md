@@ -32,7 +32,7 @@ Write every claim with citations, run `excerpts` and the support worker as in [s
  ]}
 ```
 
-Exactly these five sections, in this order. `works_with` covers language, environment, requirements, dependencies and installation; `example` is a minimal example from the docs or the examples (`code` is optional); `competitors` has 0 to 5 `rows`, and each `competitor` is the `OWNER/NAME` you fetched. Blocks: `competitor_not_fetched` (a row without `fetch-competitor`), `part_not_in_mode` (the mode has no overview), plus the support codes of sources.md. `python3 "<SKILL_DIR>/scripts/teach_me.py" show-part <id> overview` returns the saved report (`part_not_saved` if there is none).
+Exactly these five sections, in this order. `works_with` covers language, environment, requirements, dependencies and installation; `example` is a minimal example from the docs or the examples (`code` is optional); `competitors` has 0 to 5 `rows` (the script accepts any number from 0 to 5; aiming for 3 to 5 is your job, and a competitor you cannot verify is left out, not invented), and each `competitor` is the `OWNER/NAME` you fetched (case does not matter). Blocks: `competitor_not_fetched` (a row without `fetch-competitor`), `part_not_in_mode` (the mode has no overview), plus the support codes of sources.md. `python3 "<SKILL_DIR>/scripts/teach_me.py" show-part <id> overview` returns the saved report (`part_not_saved` if there is none).
 
 ## Presenting it
 

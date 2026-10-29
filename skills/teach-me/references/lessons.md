@@ -2,7 +2,7 @@
 
 ## Syllabus
 
-Send to `python3 "<SKILL_DIR>/scripts/teach_me.py" save-syllabus <id>` (stdin JSON). Only modes 3 and 4 have a syllabus (modes 1 and 2: `part_not_in_mode`). Each topic has a `part`: `use`, or `internals` (mode 4 only; in mode 3 it is blocked with `part_not_in_mode`, and without public code with `no_public_code`). Put every `use` topic first and the `internals` topics after them: the order of the file is the order of study.
+Send to `python3 "<SKILL_DIR>/scripts/teach_me.py" save-syllabus <id>` (stdin JSON). Only modes 3 and 4 have a syllabus (modes 1 and 2: `part_not_in_mode`). Each topic has a `part`: `use`, or `internals` (mode 4 only; in mode 3 it is blocked with `part_not_in_mode`, without public code with `no_public_code`, and with only a monorepo package folder saved, `code_not_full`: run `fetch-code <id> --full` first). Put every `use` topic first and the `internals` topics after them: the order of the file is the order of study.
 
 ```
 {"topics": [

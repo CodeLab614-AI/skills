@@ -383,6 +383,10 @@ def _read_inventory(final: Path) -> "dict | None":
     return head if isinstance(head.get("files"), list) else None
 
 
+_NOT_FULL = ("The saved code is only the package folder of a monorepo, and this mode needs the "
+             "whole repository: run fetch-code <id> --full first.")
+
+
 def saved_inventory(meta: dict) -> "dict | None":
     """Inventory header of the code saved for the current version, None without one."""
     version = meta.get("version")

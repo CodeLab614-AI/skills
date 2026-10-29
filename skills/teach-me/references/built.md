@@ -29,7 +29,7 @@ Cite code (`{"kind": "code", "path": ..., "line_start": N, "line_end": M}`) in t
  ]}
 ```
 
-Exactly these four sections, in this order. Blocks: `no_code_citations`, `code_not_saved` (no code saved yet: run `fetch-code` first), `no_public_code`, `part_not_in_mode` (modes 1, 3 and 4), plus the support codes. `python3 "<SKILL_DIR>/scripts/teach_me.py" show-part <id> built` returns the saved tour (`part_not_saved` if none).
+Exactly these four sections, in this order. Blocks: `no_code_citations`, `code_not_saved` (no code saved yet: run `fetch-code` first), `code_not_full` (only the package folder of a monorepo is saved: run `fetch-code <id> --full`), `no_public_code`, `part_not_in_mode` (modes 1, 3 and 4), plus the support codes. `python3 "<SKILL_DIR>/scripts/teach_me.py" show-part <id> built` returns the saved tour (`part_not_saved` if none).
 
 ## Presenting it
 

@@ -71,6 +71,8 @@ def save_built(dossier_id: str, data) -> dict:
                                "This library has no public code, so the tour cannot be built.")
         if not _code_saved(meta):
             raise BlockedError("code_not_saved", code._NO_CODE)
+        if code.saved_inventory(meta).get("layout") == "monorepo":
+            raise BlockedError("code_not_full", code._NOT_FULL)
         resolved = support.resolve_blocks(dossier_id, blocks)
         sections = []
         for b, claims in zip(blocks, resolved):

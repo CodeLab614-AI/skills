@@ -54,6 +54,21 @@ class ModesTests(unittest.TestCase):
             self.assertEqual(dossier.load(did)[0]["parts_done"], ["use"])
             self.assertEqual(dossier.load(did)[0]["mode"], "overview")
 
+    def test_set_mode_refreshes_the_progress_set_aside_list(self):
+        with TempHome():
+            did = make(mode="use-internals")
+            topic = {"slug": "core", "title": "Core", "objective": "o", "why_here": "w",
+                     "part": "internals", "depends_on": [], "sources": []}
+            meta, _ = dossier.load(did)
+            folder = store.dossier_dir(did)
+            store.atomic_write(folder / meta["names"]["syllabus"], frontmatter.dump(
+                {"teach_me": "syllabus", "topics": [dict(topic, number=1)]}, "# s\n"))
+            code_, out = run_script("set-mode", did, "use")
+            self.assertEqual(code_, 0, out)
+            body = (folder / meta["names"]["progress"]).read_text(encoding="utf-8")
+            self.assertIn("Set aside", body)
+            self.assertIn("Core", body)
+
     def test_set_mode_blocks_without_public_code(self):
         with TempHome():
             did = make(public_code=False)

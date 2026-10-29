@@ -88,11 +88,11 @@ def _saved_layout(meta: dict) -> "str | None":
 
 
 def set_mode(dossier_id: str, mode: str) -> dict:
-    from . import dossier, store
+    from . import dossier, progress, store
     from .errors import BlockedError
     _check(mode)
     dossier.require(dossier_id)
-    with store.locked(dossier_id):
+    with store.locked(dossier_id) as folder:
         meta, _ = dossier.load(dossier_id)
         if needs_public_code(mode) and meta.get("public_code") is False:
             raise BlockedError("no_public_code",
@@ -100,6 +100,8 @@ def set_mode(dossier_id: str, mode: str) -> dict:
         previous = meta.get("mode")
         meta["mode"] = mode
         dossier.save(dossier_id, meta)
+        if (folder / meta["names"]["syllabus"]).exists():
+            progress.write(folder, meta, progress.load(folder, meta))
         full = needs_full_code(mode) and _saved_layout(meta) == "monorepo"
         return {"ok": True, "id": dossier_id, "mode": mode, "previous_mode": previous,
                 "missing_parts": missing_parts(meta), "set_aside_parts": set_aside_parts(meta, mode),

@@ -5,7 +5,7 @@ import unittest
 
 import helpers  # noqa: F401
 from helpers import TempHome, run_script
-from teach_me_lib import docs, dossier, frontmatter, store, topics
+from teach_me_lib import docs, dossier, frontmatter, modes, store, topics
 from teach_me_lib.errors import BlockedError
 
 URL = "https://sdk.example.com/docs/generate"
@@ -195,6 +195,31 @@ class SyllabusTest(TopicsBase):
         dossier.save(self.did, meta)
         code, out = self.syl(stopic("a"), stopic("c", part="internals"))
         self.assertEqual((code, out["error"]["code"]), (2, "no_public_code"))
+
+    def _inventory(self, layout):
+        final = self.base / self.n["sources_dir"] / self.n["code_dir"] / "v1.0"
+        (final / "_inventory.md").write_text(frontmatter.dump(
+            {"teach_me": "index", "layout": layout, "files": [{"path": "a.ts"}]}, "# index\n"),
+            encoding="utf-8")
+
+    def test_syllabus_internals_blocks_monorepo_code(self):
+        run_script("set-mode", self.did, "use-internals")
+        self._inventory("monorepo")
+        code, out = self.syl(stopic("a"), stopic("c", part="internals"))
+        self.assertEqual((code, out["error"]["code"]), (2, "code_not_full"))
+        self.assertIn("--full", out["error"]["message"])
+        self.assertEqual(self.syl(stopic("a"))[0], 0)  # no internals topic sent: allowed
+        self._inventory("full")
+        self.assertEqual(self.syl(stopic("a"), stopic("c", part="internals"))[0], 0)
+
+    def test_internals_syllabus_without_internals_topics_clears_built_syllabus(self):
+        run_script("set-mode", self.did, "use-internals")
+        self.assertEqual(self.syl(stopic("a"), stopic("c", part="internals"))[0], 0)
+        self.assertEqual(dossier.load(self.did)[0]["parts_done"], ["use", "built_syllabus"])
+        self.assertEqual(self.syl(stopic("a"))[0], 0)
+        meta, _ = dossier.load(self.did)
+        self.assertEqual(meta["parts_done"], ["use"])
+        self.assertEqual(modes.missing_parts(meta), ["built_syllabus"])
 
     def test_appending_internals_keeps_use_numbers_and_progress(self):
         self.syl(stopic("a"), stopic("b"), stopic("c"))

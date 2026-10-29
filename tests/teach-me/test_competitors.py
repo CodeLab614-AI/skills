@@ -165,6 +165,37 @@ class FetchCompetitorTests(unittest.TestCase):
             self.assertIsNone(out["latest"])
             self.assertEqual(out["license"], {"registry": None, "repo": None, "match": None})
 
+    def test_readme_download_failure_keeps_the_verified_data(self):
+        holder = {}
+        routes = comp_routes()
+        with_readme(holder, routes)
+        routes["/raw/Acme/Widget/main/README.md"] = (500, "text/plain", b"boom")
+        with FixtureServer(routes) as srv, TempHome():
+            holder["srv"] = srv
+            setup(srv)
+            code, out = self.run_it(routes, holder, "--npm", "widget")
+            self.assertEqual(code, 0, out)
+            self.assertEqual(out["notices"], ["no_readme"])
+            self.assertIsNone(out["readme_url"])
+            profile, _ = dossier.load("ai")
+            stored = profile["competitors"]["acme/widget"]
+            self.assertEqual(stored["latest"], "2.1.0")
+            self.assertIsNone(stored["readme_url"])
+
+    def test_refetch_removes_stale_meta_files(self):
+        holder = {}
+        routes = comp_routes()
+        with_readme(holder, routes)
+        with FixtureServer(routes) as srv, TempHome() as home:
+            holder["srv"] = srv
+            setup(srv)
+            self.assertEqual(self.run_it(routes, holder, "--npm", "widget")[0], 0)
+            self.assertEqual(len(list(home.path.rglob("competitor-acme__widget-*.md"))), 4)
+            self.assertEqual(self.run_it(routes, holder)[0], 0)
+            names = sorted(p.name for p in home.path.rglob("competitor-acme__widget-*.md"))
+            self.assertEqual(len(names), 3, names)
+            self.assertFalse([n for n in names if "npm" in n])
+
     def test_license_mismatch_notice(self):
         holder = {}
         routes = comp_routes(npm_lic="GPL-3.0")

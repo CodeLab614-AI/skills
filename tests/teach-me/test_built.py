@@ -82,6 +82,16 @@ class BuiltTests(BuiltBase):
         code, out = self.save(payload())
         self.assertEqual((code, out["error"]["code"]), (2, "no_public_code"))
 
+    def test_save_built_blocks_monorepo_layout(self):
+        final = self.base / self.n["sources_dir"] / self.n["code_dir"] / "v1.0"
+        (final / codelib.INVENTORY).write_text(frontmatter.dump(
+            {"teach_me": "index", "layout": "monorepo", "package_dir": "packages/a",
+             "files": [{"path": "a.ts"}]}, "# index\n"), encoding="utf-8")
+        code, out = self.save(payload())
+        self.assertEqual((code, out["error"]["code"]), (2, "code_not_full"))
+        self.assertIn("fetch-code", out["error"]["message"])
+        self.assertIn("--full", out["error"]["message"])
+
     def test_save_built_blocks_without_saved_code(self):
         final = self.base / self.n["sources_dir"] / self.n["code_dir"] / "v1.0"
         (final / codelib.INVENTORY).unlink()

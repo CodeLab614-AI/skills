@@ -111,7 +111,7 @@ def _body(meta: dict, head: dict, entries: dict, folder: Path) -> str:
         cols = lab["columns"]
         lines += ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
         for row in rows:
-            e = entries[row["competitor"]]
+            e = entries[row["competitor"].lower()]
             act = e.get("activity") if isinstance(e.get("activity"), dict) else {}
             lines.append("| " + " | ".join([
                 "[%s](%s)" % (_cell(row["competitor"]), _cell(e.get("url", ""))),
@@ -137,7 +137,7 @@ def save_overview(dossier_id: str, data) -> dict:
         entries = meta.get("competitors") if isinstance(meta.get("competitors"), dict) else {}
         asked = data["sections"][-1]["rows"]
         for i, item in enumerate(asked):
-            if item["competitor"] not in entries:
+            if item["competitor"].lower() not in entries:
                 raise BlockedError("competitor_not_fetched",
                                    "competitors[%d]: %r was not fetched; run fetch-competitor first."
                                    % (i, item["competitor"]))
