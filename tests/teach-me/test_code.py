@@ -444,6 +444,79 @@ class MonorepoTests(unittest.TestCase):
             # one entry per folder: examples
             self.assertEqual(not_saved(meta), ["examples"])
 
+    def _saved_examples(self, out):
+        dest = Path(out["path"])
+        return sorted(str(p.relative_to(dest)) for p in (dest / "examples").rglob("*") if p.is_file())
+
+    def _example_entries(self, paths, order_seed):
+        entries = [("m", "dir", None), ("m/packages/ai/package.json", "file", json.dumps({"name": "ai"}))]
+        entries += [("m/" + p, "file", body) for p, body in paths]
+        head, tail = entries[:2], entries[2:]
+        random.Random(order_seed).shuffle(tail)
+        return head + tail
+
+    def _round_robin_files(self):
+        groups = {"": ["examples/x%d.ts" % i for i in range(3)],
+                  "a": ["examples/a/f%03d.ts" % i for i in range(200)],
+                  "b": ["examples/b/sub/f%03d.ts" % i for i in range(150)],
+                  "c": ["examples/c/f%d.ts" % i for i in range(2)]}
+        return [(p, "import 'ai';\n") for g in groups.values() for p in g], groups
+
+    def test_examples_spread_round_robin_across_folders(self):
+        files, groups = self._round_robin_files()
+        expected = []
+        keys = sorted(groups)
+        for depth in range(200):
+            for k in keys:
+                if depth < len(groups[k]):
+                    expected.append(sorted(groups[k])[depth])
+        expected = sorted(expected[:300])
+        self.assertEqual(len(expected), 300)
+        with self.run_mono(self._example_entries(files, 11)) as srv, TempHome():
+            did = mono_setup(srv)
+            code, out = fetch(srv, did, ref="v1")
+            self.assertEqual(code, 0, out)
+            saved = self._saved_examples(out)
+            self.assertEqual(len(saved), 300)
+            self.assertEqual(saved, expected)
+            for p in groups["c"] + groups[""]:
+                self.assertIn(p, saved)
+
+    def test_examples_same_set_in_two_tar_orders(self):
+        files, _ = self._round_robin_files()
+        results = []
+        for seed in (1, 2):
+            with self.run_mono(self._example_entries(files, seed)) as srv, TempHome():
+                did = mono_setup(srv)
+                code, out = fetch(srv, did, ref="v1")
+                self.assertEqual(code, 0, out)
+                results.append(self._saved_examples(out))
+        self.assertEqual(results[0], results[1])
+
+    def test_examples_fewer_than_cap_are_all_saved(self):
+        files = [("examples/a/f%d.ts" % i, "import 'ai';\n") for i in range(40)]
+        files += [("examples/b/g%d.ts" % i, "import 'ai';\n") for i in range(7)]
+        files += [("examples/top.ts", "import 'ai';\n")]
+        with self.run_mono(self._example_entries(files, 3)) as srv, TempHome():
+            did = mono_setup(srv)
+            code, out = fetch(srv, did, ref="v1")
+            self.assertEqual(code, 0, out)
+            self.assertEqual(self._saved_examples(out), sorted(p for p, _ in files))
+
+    def test_examples_not_importing_are_never_picked(self):
+        files = [("examples/a/f%03d.ts" % i, "import 'ai';\n") for i in range(300)]
+        files += [("examples/b/f%03d.ts" % i, "import 'ai';\n") for i in range(10)]
+        files += [("examples/b/nope.ts", "const t = 1;\n"), ("examples/z/nope.ts", "const t = 1;\n")]
+        with self.run_mono(self._example_entries(files, 5)) as srv, TempHome():
+            did = mono_setup(srv)
+            code, out = fetch(srv, did, ref="v1")
+            self.assertEqual(code, 0, out)
+            saved = self._saved_examples(out)
+            self.assertEqual(len(saved), 300)
+            self.assertNotIn("examples/b/nope.ts", saved)
+            self.assertNotIn("examples/z/nope.ts", saved)
+            self.assertEqual(sum(1 for p in saved if p.startswith("examples/b/")), 10)
+
     def test_pypi_monorepo(self):
         entries = [
             ("m", "dir", None),

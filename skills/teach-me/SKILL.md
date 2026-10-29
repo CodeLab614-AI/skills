@@ -64,7 +64,7 @@ Phases, in order; each one is recorded in the profile so a cut research resumes:
 - Code you read, by priority in mode `use`: package exports and entry point, public types, examples, usage tests, changelog.
 - If the docs and the code disagree, **the code wins** and the discrepancy goes into the coverage.
 - Declare in the coverage what was read, what was left out, and every page that failed.
-- In mode `use`, if the repository is a monorepo, `fetch-code` keeps only the root files (README, LICENSE, CHANGELOG, `package.json`, `pyproject.toml`), the main package and up to 300 examples that import it. Everything else is listed in the coverage as `not_saved`.
+- In mode `use`, if the repository is a monorepo, `fetch-code` keeps only the root files (README, LICENSE, CHANGELOG, `package.json`, `pyproject.toml`), the main package and up to 300 examples that import it, spread across the example folders. Everything else is listed in the coverage as `not_saved`.
 
 ## 5. Syllabus
 

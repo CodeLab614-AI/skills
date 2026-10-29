@@ -5,7 +5,7 @@
 ## What it does
 
 - Downloads once, at the start, the documentation pages and (when it exists) the public code of the library, and writes down what it read, what it left out and every page that failed (the "coverage").
-- For a monorepo (many packages in one repository) it saves only the package you study, the root files (README, license, changelog, manifests) and up to 300 examples that use it. The rest is listed as "not saved" in the coverage, and when a doubt needs one of those folders the skill offers to download it.
+- For a monorepo (many packages in one repository) it saves only the package you study, the root files (README, license, changelog, manifests) and up to 300 examples that use it, spread across the example folders. The rest is listed as "not saved" in the coverage, and when a doubt needs one of those folders the skill offers to download it.
 - Writes a syllabus ordered by prerequisites (about one or two days of study) and explains why each topic goes where it goes.
 - Teaches one topic at a time in 6 blocks (problem, idea, minimal example, predict, internals, pitfalls), stopping after each block so you can answer or ask.
 - Answers your doubts from the saved sources only, citing the page or the `file:line`. Anything it cannot verify is shown with a warning sign, never as a fact. If the answer is not in what was saved, it says "I did not bring that" and offers to download the exact page.

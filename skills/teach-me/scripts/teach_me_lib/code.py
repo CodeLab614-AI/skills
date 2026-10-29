@@ -173,8 +173,9 @@ def _import_pattern(registry: str, name: str):
 
 
 def _pick_examples(tar_path: Path, registry: str, name: str) -> set:
-    """The first MAX_EXAMPLES files (by path) of the root examples/ folder that import the
-    package. The result does not depend on the order of the members in the tar."""
+    """Up to MAX_EXAMPLES files of the root examples/ folder that import the package, spread
+    round-robin across its first-level sub-folders (loose files are one group, key "", first;
+    groups alphabetical, each group by path). Independent of the order of the tar members."""
     pattern = _import_pattern(registry, name)
     found: list = []
     tf = _open_tar(tar_path)
@@ -196,7 +197,19 @@ def _pick_examples(tar_path: Path, registry: str, name: str) -> set:
         raise _corrupt(exc)
     finally:
         tf.close()
-    return set(sorted(found)[:MAX_EXAMPLES])
+    groups: dict = {}
+    for rel in found:
+        parts = rel.split("/")
+        groups.setdefault(parts[1] if len(parts) > 2 else "", []).append(rel)
+    queues = [sorted(groups[k]) for k in sorted(groups)]
+    picked: set = set()
+    depth = 0
+    while len(picked) < MAX_EXAMPLES and any(depth < len(q) for q in queues):
+        for q in queues:
+            if depth < len(q) and len(picked) < MAX_EXAMPLES:
+                picked.add(q[depth])
+        depth += 1
+    return picked
 
 
 def _package_of(profile: dict) -> "tuple | None":
