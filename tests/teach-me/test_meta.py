@@ -211,5 +211,40 @@ class UpdateProfileTests(unittest.TestCase):
             self.assertEqual((code, out["error"]["code"]), (2, "dossier_not_found"))
 
 
+class SameRepoTests(unittest.TestCase):
+    def _two(self, srv):
+        run_script("init", "https://github.com/vercel/ai", "--lang", "en", env=srv.env())
+        run_script("init", "https://www.npmjs.com/package/@ai-sdk/openai", "--lang", "en", env=srv.env())
+
+    def test_same_repo_as_lists_other_dossiers(self):
+        routes = dict(gh_routes(), **{"/@ai-sdk%2Fopenai/latest": npm_doc("1.0.0")})
+        with FixtureServer(routes) as srv, TempHome():
+            self._two(srv)
+            code, out = run_script("fetch-meta", "ai-sdk-openai", "--npm", "@ai-sdk/openai",
+                                   "--repo", "vercel/ai", env=srv.env())
+            self.assertEqual(code, 0, out)
+            self.assertEqual([c["id"] for c in out["same_repo_as"]], ["ai"])
+            self.assertEqual(set(out["same_repo_as"][0]), {"id", "name", "roots"})
+            self.assertIn("github.com/vercel/ai", out["same_repo_as"][0]["roots"])
+            self.assertEqual(dossier.load("ai-sdk-openai")[0]["phases"].keys(), {"meta"})
+
+    def test_no_other_dossier_no_key(self):
+        with FixtureServer(gh_routes()) as srv, TempHome():
+            run_script("init", "https://www.npmjs.com/package/@ai-sdk/openai", "--lang", "en", env=srv.env())
+            code, out = run_script("fetch-meta", "ai-sdk-openai", "--repo", "vercel/ai", env=srv.env())
+            self.assertEqual(code, 0, out)
+            self.assertNotIn("same_repo_as", out)
+
+    def test_not_investigating_no_key(self):
+        with FixtureServer(gh_routes()) as srv, TempHome():
+            self._two(srv)
+            meta, _ = dossier.load("ai-sdk-openai")
+            meta["status"] = "ready"
+            dossier.save("ai-sdk-openai", meta)
+            code, out = run_script("fetch-meta", "ai-sdk-openai", "--repo", "vercel/ai", env=srv.env())
+            self.assertEqual(code, 0, out)
+            self.assertNotIn("same_repo_as", out)
+
+
 if __name__ == "__main__":
     unittest.main()

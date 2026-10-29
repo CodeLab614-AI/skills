@@ -57,6 +57,10 @@ def _cmd_add_root(args) -> dict:
     return dossier.add_root(args.id, args.url)
 
 
+def _cmd_discard(args) -> dict:
+    return dossier.discard(args.id)
+
+
 def _cmd_fetch_meta(args) -> dict:
     return meta.fetch_meta(args.id, args.npm, args.pypi, args.repo)
 
@@ -228,6 +232,7 @@ def _register() -> None:
     COMMANDS["fetch-meta"] = (cfg_fetch_meta, _cmd_fetch_meta)
     COMMANDS["update-profile"] = (lambda p: p.add_argument("id"), _cmd_update_profile)
     COMMANDS["init"] = (cfg_init, _cmd_init)
+    COMMANDS["discard"] = (lambda p: p.add_argument("id"), _cmd_discard)
     COMMANDS["add-root"] = (cfg_add_root, _cmd_add_root)
 
 

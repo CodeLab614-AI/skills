@@ -64,9 +64,21 @@ def matches(url_norm: str, root: str) -> bool:
     return url_norm == root or url_norm.startswith(root + "/")
 
 
-def domain_unit(norm: str) -> str:
-    """The unit for the ambiguity rule: the host, or host + first segment on shared hosts."""
+def domain_unit(norm: str) -> "str | None":
+    """The unit for the ambiguity rule, or None when the URL has no unit.
+
+    github.com: the owner; npmjs.com: the scope of a scoped package; pypi.org: none.
+    Other hosts: the host, or host + first segment on shared hosts.
+    """
     host, *segs = norm.split("/")
+    if host == "github.com":
+        return ("github.com/%s" % segs[0]).lower() if segs else None
+    if host == "npmjs.com":
+        if len(segs) >= 2 and segs[0] == "package" and segs[1].startswith("@") and len(segs[1]) > 1:
+            return ("npmjs.com/package/%s" % segs[1]).lower()
+        return None
+    if host == "pypi.org":
+        return None
     if _is_shared(host) and segs:
         return "%s/%s" % (host, segs[0])
     return host

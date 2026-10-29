@@ -198,4 +198,10 @@ def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
         profile["license"] = out["license"]
         profile.setdefault("phases", {})["meta"] = _now()
         dossier.save(dossier_id, profile)
+        if slug and profile.get("status") == "investigating":
+            repo_root = urls.root_for("https://github.com/" + slug)
+            same = [dossier._summary(m) for m in dossier.find_all()
+                    if m.get("id") != dossier_id and repo_root in m.get("roots", [])]
+            if same:
+                out["same_repo_as"] = same
     return out

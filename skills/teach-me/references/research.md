@@ -10,7 +10,7 @@ For a language other than `es` or `en`, translate these keys (values are plain f
 
 Each phase is marked done in the profile. If research is cut, the dossier stays `investigating` and the next run resumes at the first phase without a mark.
 
-1. **Identify.** Find the web, docs, repository and package from the URL the person gave. Run `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-meta <id>` with `--npm <name>` or `--pypi <name>` (not both) and/or `--repo <owner/name>`. It returns the package (`latest`, `license`), the repository (`size_kb`, `license_spdx`, `head_sha`), the license comparison and the version that will be studied, and saves the raw responses. Mention a `license_mismatch` notice. If the version tag was not found (`tag_not_found`), the studied snapshot is the head commit; tell the person.
+1. **Identify.** Find the web, docs, repository and package from the URL the person gave. Run `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-meta <id>` with `--npm <name>` or `--pypi <name>` (not both) and/or `--repo <owner/name>`. It returns the package (`latest`, `license`), the repository (`size_kb`, `license_spdx`, `head_sha`), the license comparison and the version that will be studied, and saves the raw responses. Mention a `license_mismatch` notice. If the version tag was not found (`tag_not_found`), the studied snapshot is the head commit; tell the person. If the output has `same_repo_as`, another dossier already uses this repository: ask the person as SKILL.md section 4 says (discard the new dossier and reuse the existing one, or continue).
 2. **Profile.** Send to `python3 "<SKILL_DIR>/scripts/teach_me.py" update-profile <id>`:
 
    ```

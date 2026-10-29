@@ -59,12 +59,45 @@ class LookupTests(unittest.TestCase):
             self.assertEqual(data["match"], "ambiguous")
             self.assertEqual(sorted(c["id"] for c in data["candidates"]), ["a-one", "b-two"])
 
-    def test_monorepo_other_npm_package_is_ambiguous(self):
+    def test_monorepo_other_npm_package_is_new(self):
         with TempHome():
             init("https://www.npmjs.com/package/ai")
             _, data = run_script("lookup", "https://npmjs.com/package/@ai-sdk/openai")
+            self.assertEqual(data["match"], "new")
+
+    def test_github_same_owner_ambiguous_other_owner_new(self):
+        with TempHome():
+            init("https://github.com/vercel/ai")
+            _, data = run_script("lookup", "https://github.com/Vercel/next.js")
             self.assertEqual(data["match"], "ambiguous")
             self.assertEqual(data["candidates"][0]["id"], "ai")
+            _, data = run_script("lookup", "https://github.com/other/ai")
+            self.assertEqual(data["match"], "new")
+            _, data = run_script("lookup", "https://github.com")
+            self.assertEqual(data["match"], "new")
+
+    def test_npm_same_scope_ambiguous_other_scope_new(self):
+        with TempHome():
+            init("https://www.npmjs.com/package/@ai-sdk/openai")
+            _, data = run_script("lookup", "https://npmjs.com/package/@ai-sdk/anthropic")
+            self.assertEqual(data["match"], "ambiguous")
+            self.assertEqual(data["candidates"][0]["id"], "ai-sdk-openai")
+            _, data = run_script("lookup", "https://npmjs.com/package/@other/anthropic")
+            self.assertEqual(data["match"], "new")
+            _, data = run_script("lookup", "https://npmjs.com/package/left-pad")
+            self.assertEqual(data["match"], "new")
+
+    def test_npm_unscoped_vs_unscoped_is_new(self):
+        with TempHome():
+            init("https://www.npmjs.com/package/ai")
+            _, data = run_script("lookup", "https://npmjs.com/package/zod")
+            self.assertEqual(data["match"], "new")
+
+    def test_pypi_other_project_is_new(self):
+        with TempHome():
+            init("https://pypi.org/project/requests")
+            _, data = run_script("lookup", "https://pypi.org/project/httpx")
+            self.assertEqual(data["match"], "new")
 
     def test_shared_host_unit_is_host_plus_first_segment(self):
         with TempHome():
@@ -78,7 +111,7 @@ class LookupTests(unittest.TestCase):
         with TempHome():
             init("https://www.npmjs.com/package/ai")
             _, data = run_script("lookup", "https://npmjs.com/package/@ai-sdk/openai")
-            self.assertEqual(data["match"], "ambiguous")
+            self.assertEqual(data["match"], "new")
             code, res = run_script("add-root", "ai", "https://npmjs.com/package/@ai-sdk/openai")
             self.assertEqual(code, 0)
             self.assertIn("npmjs.com/package/@ai-sdk/openai", res["roots"])

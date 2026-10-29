@@ -10,6 +10,7 @@ unknown ids.
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -185,9 +186,9 @@ def lookup(url: str) -> dict:
     if winners:
         return {"ok": True, "match": "ambiguous", "normalized": norm,
                 "candidates": [_summary(m) for m in winners]}
-    unit = urls.domain_unit(norm)
-    same = [m for m in profiles
-            if any(urls.domain_unit(r) == unit for r in m.get("roots", []))]
+    unit = urls.domain_unit(key)
+    same = [] if unit is None else [
+        m for m in profiles if any(urls.domain_unit(r) == unit for r in m.get("roots", []))]
     if same:
         return {"ok": True, "match": "ambiguous", "normalized": norm,
                 "candidates": [_summary(m) for m in same]}
@@ -390,3 +391,39 @@ def update_profile(dossier_id: str, patch) -> dict:
     return {"ok": True, "id": dossier_id, "roots": roots, "links": stored_links,
             "phases": phases, "public_code": meta.get("public_code"),
             "coverage": cov}
+
+
+# --- discard -----------------------------------------------------------------
+
+def _utc_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def discard(dossier_id: str) -> dict:
+    """Move a dossier that is still being created to <home>/.discarded/. Deletes nothing."""
+    require(dossier_id)
+    with store.locked(dossier_id) as folder:
+        meta, _ = load(dossier_id)
+        if meta.get("status") != "investigating" or "syllabus" in (meta.get("phases") or {}):
+            raise BlockedError(
+                "not_discardable",
+                "Dossier %r is already in use (ready or with a syllabus), so it cannot be discarded."
+                % dossier_id)
+        base = store.home() / ".discarded"
+        try:
+            base.mkdir(exist_ok=True)
+            name = "%s-%s" % (dossier_id, _utc_stamp())
+            dest, n = base / name, 1
+            while dest.exists():
+                n += 1
+                dest = base / ("%s-%d" % (name, n))
+            os.rename(str(folder), str(dest))
+        except OSError:
+            raise BlockedError("not_writable", "Cannot move the dossier folder to %s" % base)
+        # The lock file travelled with the folder: remove it from the new place.
+        try:
+            (dest / ".lock").unlink()
+        except OSError:
+            pass
+    _write_index()
+    return {"ok": True, "id": dossier_id, "moved_to": str(dest)}
