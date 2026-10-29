@@ -2,7 +2,7 @@
 
 ## Syllabus
 
-Send to `python3 "<SKILL_DIR>/scripts/teach_me.py" save-syllabus <id>` (stdin JSON). Mode `use` accepts only `part: "use"`; anything else is blocked with `part_not_in_mode`.
+Send to `python3 "<SKILL_DIR>/scripts/teach_me.py" save-syllabus <id>` (stdin JSON). Only modes 3 and 4 have a syllabus (modes 1 and 2: `part_not_in_mode`). Each topic has a `part`: `use`, or `internals` (mode 4 only; in mode 3 it is blocked with `part_not_in_mode`, and without public code with `no_public_code`). Put every `use` topic first and the `internals` topics after them: the order of the file is the order of study.
 
 ```
 {"topics": [
@@ -16,7 +16,11 @@ Send to `python3 "<SKILL_DIR>/scripts/teach_me.py" save-syllabus <id>` (stdin JS
 ]}
 ```
 
-Rules: slugs match `^[a-z0-9][a-z0-9-]*$`, are unique, and are in the dossier language. `depends_on` lists only earlier slugs (order by prerequisites; no topic uses what was not seen). Every topic has at least one citation, checked against the saved sources. Slugs, titles and reasons are written in the conversation language. Aim for a syllabus that takes one or two days. Saving again keeps progress by slug. Show the person the result: number, title, objective and why it goes there.
+Rules: slugs match `^[a-z0-9][a-z0-9-]*$`, are unique, and are in the dossier language. `depends_on` lists only earlier slugs (order by prerequisites; no topic uses what was not seen). Every topic has at least one citation, checked against the saved sources. Slugs, titles and reasons are written in the conversation language. Aim for a syllabus that takes one or two days. Saving again keeps progress by slug.
+
+### Second part: how it is built (mode 4)
+
+After the `use` part, add the `internals` topics (usually 3 to 6): the map of the main pieces, how they connect, what happens inside in one or two typical uses, and the design decisions the code or its docs explain. Read the internal modules first (built.md says how) and cite code (`kind: "code"`) for each topic. Each `internals` topic lists in `depends_on` the `use` topics it needs and any earlier `internals` topic, so a person who finished the `use` part continues straight into it. When mode 3 changes to mode 4, call `save-syllabus` again with all the topics (the existing `use` ones unchanged plus the new `internals` ones): progress and notes are kept by slug. When mode 4 changes to mode 3 the `internals` topics are set aside, not deleted, and do not count as pending. Lessons and exams of an `internals` topic work like any other topic. Show the person the result: number, title, objective and why it goes there.
 
 ## Writing a topic
 

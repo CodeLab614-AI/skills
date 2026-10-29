@@ -4,7 +4,7 @@
 
 ## What it does
 
-- Downloads once, at the start, the documentation pages and (when it exists) the public code of the library, and writes down what it read, what it left out and every page that failed (the "coverage").
+- Downloads once, at the start, the documentation pages (only the entry ones in modes 1 and 2) and, when it exists, the public code of the library, and writes down what it read, what it left out and every page that failed (the "coverage").
 - For a monorepo (many packages in one repository) it saves only the package you study, the root files (README, license, changelog, manifests) and up to 300 examples that use it, spread across the example folders. The rest is listed as "not saved" in the coverage, and when a doubt needs one of those folders the skill offers to download it.
 - Writes a syllabus ordered by prerequisites (about one or two days of study) and explains why each topic goes where it goes.
 - Teaches one topic at a time in 6 blocks (problem, idea, minimal example, predict, internals, pitfalls), stopping after each block so you can answer or ask.
@@ -23,12 +23,20 @@
 
 On every run the first question is "What do you want to do?":
 
-1. Know what it is: **coming soon**
-2. Know what it is and how it is built (must be open source): **coming soon**
-3. **Study how to use it**
-4. Study how to use it and how it is built (must be open source): **coming soon**
+1. **Know what it is.** A researched report: what it is and does, what it is for, what it is used with, what using it looks like and its direct competitors (3 to 5), with a source on every claim. No syllabus and no exams; you ask until you know whether it fits.
+2. **Know what it is and how it is built** (must be open source). The same report, plus a guided tour of the architecture: the map of the main pieces, how they connect, what happens inside in one or two typical uses, and the design decisions the code or its docs explain. Conversational, in short parts, no exams.
+3. **Study how to use it.** The study flow described above: syllabus, lessons, doubts and exams.
+4. **Study how to use it and how it is built** (must be open source). The same, plus a second part of the syllabus about how it is built inside, after the "how to use it" part.
 
-Only "Study how to use it" works today. If you pick another one, the skill tells you it is not built yet and offers "Study how to use it".
+Modes 1 and 2 research more lightly: only the entry pages of the documentation (introduction, getting started, installation, concepts, comparisons), the README, the examples, what the package exposes and its manifest. Everything else is declared in the coverage as not downloaded. In the modes with "how it is built" the whole repository is saved, not just the studied package.
+
+### Competitors
+
+They are never taken from memory. Candidates come from the documentation and README (comparisons, "alternatives"), from the npm search by keywords, and from the agent's own web search when it has one. PyPI has no search that a program can use, so for Python libraries only the docs, the README and the web search are used. Each competitor is checked (repository, licence, latest version, activity, README) and one that cannot be verified is not listed. The licence, version and dates in the table are written by the script from what it downloaded, and every difference carries its source. The skill gives no verdict: whether it suits you is your call.
+
+### Changing mode
+
+Give the URL of a library you already have and the skill says what exists (mode, pieces done, current topic) and asks the mode again. Changing mode **adds the pieces that are missing**, reusing everything already downloaded: the overview report is written from what was downloaded and only the competitors are researched; the "how to use it" syllabus is completed; "how it is built" reads the internal modules and, in mode 4, adds the second part at the end of the syllabus, keeping your progress. Moving to a mode with fewer pieces **deletes nothing**: what is left over stays set aside in case you come back, and set-aside topics do not count as pending.
 
 ## Always with a URL
 
@@ -36,8 +44,9 @@ Invoke it with an `http(s)` URL: the documentation, the website or the repositor
 
 ## What if there is no public code
 
+- In modes 2 and 4 the skill says at the start that "how it is built" cannot be explained without public code, and offers the equivalent mode without that piece (2 to 1, 4 to 3).
 - If the URL does not lead to a public GitHub repository, the research continues from the documentation only, and the coverage says "no public code". Only GitHub is supported for code in this version: a project hosted somewhere else is treated the same way, with a notice.
-- "Study how to use it" still works if there is public usage documentation (guides or API reference). If there is none, the skill says so and stops.
+- Modes 1 and 3 still work; "Study how to use it" needs public usage documentation (guides or API reference). If there is none, the skill says so and offers "Know what it is".
 - It never deduces how something is built from indirect signs (HTTP headers, code that reaches the browser, job offers) and never reverse engineers anything.
 
 ## What is saved, and where
@@ -49,8 +58,10 @@ Everything is Markdown in a hidden folder in your home directory, `~/.teach-me/`
   README.md                       index: library | URLs | version | mode | status
   config.md                       worker models per agent (see below)
   ai-sdk/                         one folder per library (English names shown)
-    profile.md                    language, roots, license, version, phases, coverage
-    syllabus.md                   topics in order, why each goes there, their sources
+    profile.md                    language, mode, pieces done, roots, license, version, phases, coverage
+    overview.md                   the report of modes 1 and 2 (competitors table included)
+    how-it-is-built.md            the architecture tour of mode 2
+    syllabus.md                   topics in order, why each goes there, their sources (modes 3 and 4)
     topics/01-<slug>.md           material of each topic, with sources and literal excerpts
     exams/01-<slug>-attempt-1.md  each exam attempt, with the report
     progress.md                   status of each topic and what is pending
@@ -64,6 +75,8 @@ Everything is Markdown in a hidden folder in your home directory, `~/.teach-me/`
 | Spanish | English |
 |---|---|
 | `ficha.md` | `profile.md` |
+| `que-es.md` | `overview.md` |
+| `como-esta-construida.md` | `how-it-is-built.md` |
 | `temario.md` | `syllabus.md` |
 | `temas/01-que-es.md` | `topics/01-what-it-is.md` |
 | `examenes/01-…-intento-1.md` | `exams/01-…-attempt-1.md` |
@@ -138,7 +151,9 @@ On a library you already studied, the skill runs `check-update` first. If a new 
 1. Reads the changelog between your version and the new one.
 2. Fetches the new version information and the new code (when there is public code).
 3. Discovers and downloads new documentation pages, and re-downloads the pages the changelog says changed with `fetch-docs --url <page> --refresh` (without `--refresh`, a page already downloaded is never fetched again).
-4. Marks the affected topics as outdated and adds topics to the syllabus if needed. Your progress is kept by topic.
+4. Modes 3 and 4: marks the affected topics as outdated and adds topics to the syllabus if needed. Your progress is kept by topic.
+
+In modes 1 and 2 there are no topics to mark: when a new version came out, the report (and, in mode 2, the tour) is regenerated from the new downloads, and the competitors are checked again.
 
 ## Requirements
 

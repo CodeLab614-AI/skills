@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SKILL_DIR = ROOT / "skills" / "teach-me"
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
 
-REFERENCES = ("research", "sources", "lessons", "exams", "consult")
+REFERENCES = ("research", "sources", "lessons", "exams", "consult", "overview", "built")
 
 
 def _read() -> str:
@@ -71,6 +71,13 @@ class SkillMdTests(unittest.TestCase):
             ref = "references/%s.md" % name
             self.assertIn(ref, body, ref)
             self.assertTrue((SKILL_DIR / ref).is_file(), ref)
+
+    def test_no_coming_soon_and_new_modes_named(self):
+        body = _frontmatter(_read())[1]
+        self.assertNotIn("coming soon", body.lower())
+        for name in ("set-mode", "save-overview", "save-built", "search-packages",
+                     "fetch-competitor", "fetch-code <id> --full"):
+            self.assertIn(name, body, name)
 
     def test_openai_yaml_disables_implicit(self):
         text = (SKILL_DIR / "agents" / "openai.yaml").read_text(encoding="utf-8")
