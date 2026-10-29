@@ -61,6 +61,7 @@ Phases, in order; each one is recorded in the profile so a cut research resumes:
 
 - For competitor candidates (modes coming soon), `python3 "<SKILL_DIR>/scripts/teach_me.py" search-packages <id> --npm "<text>" [--size N]` searches npm; PyPI has no search API.
 - To verify one competitor lightly, `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-competitor <id> --repo OWNER/NAME [--npm NAME | --pypi NAME]` stores its licence, latest version, activity and README (citable as a doc page) under `competitors` in the profile.
+- The overview report is saved with `python3 "<SKILL_DIR>/scripts/teach_me.py" save-overview <id>` (JSON on stdin) and read back, like the tour, with `python3 "<SKILL_DIR>/scripts/teach_me.py" show-part <id> overview|built`.
 - Before downloading, tell the person the approximate size (`size_kb` of the repo, `page_count` of the docs). Do **not** ask for confirmation: they asked for everything. Only technical safety limits apply, and whatever they leave out is declared in the coverage.
 - **No public GitHub repository** (design 8.5): do not call `fetch-code`. Run `update-profile` with `public_code: false` and tell the person it will be studied from the documentation only. If there is no public usage documentation either, say that "Study how to use it" is not possible for this URL and stop. Never deduce how it is built from indirect signs and never reverse engineer anything.
 - Code you read, by priority in mode `use`: package exports and entry point, public types, examples, usage tests, changelog.

@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import dossier, frontmatter, progress, sources, store
+from . import dossier, frontmatter, progress, sources, store, support
 from .errors import BlockedError
 
 BLOCK_KINDS = ("problem", "idea", "example", "predict", "internals", "pitfalls")
@@ -196,59 +196,6 @@ def _validate_topic(data) -> None:
             raise _bad("block %r: code must be a string." % kind)
 
 
-def _check_support(data: dict) -> None:
-    if data.get("support_checked_in") not in ("subagent", "same_conversation"):
-        raise BlockedError("support_not_checked",
-                           "support_checked_in must be 'subagent' or 'same_conversation'.")
-    missing, unsupported, code_missing, code_bad = [], [], [], []
-    for block in data["blocks"]:
-        for j, claim in enumerate(block["claims"]):
-            where = "%s[%d]" % (block["kind"], j)
-            verdict = claim.get("support")
-            if verdict is None:
-                if claim["kind"] == "fact":
-                    missing.append(where)
-            elif verdict != "supported":
-                unsupported.append(where)
-        if block.get("code"):
-            verdict = block.get("code_support")
-            if verdict is None:
-                code_missing.append(block["kind"])
-            elif verdict != "supported":
-                code_bad.append(block["kind"])
-    if missing or code_missing:
-        parts = []
-        if missing:
-            parts.append("Fact claims without a support verdict: %s." % ", ".join(missing))
-        if code_missing:
-            parts.append("Code blocks without a support verdict: %s." % ", ".join(code_missing))
-        raise BlockedError("support_not_checked", " ".join(parts))
-    if unsupported or code_bad:
-        parts = []
-        if unsupported:
-            parts.append("Unsupported or invalid verdicts, fix or remove: %s." % ", ".join(unsupported))
-        if code_bad:
-            parts.append("Code blocks unsupported or with an invalid verdict, fix or remove: %s."
-                         % ", ".join(code_bad))
-        raise BlockedError("unsupported_claims", " ".join(parts))
-
-
-def _source_line(cite: dict) -> str:
-    if cite["kind"] == "doc":
-        return cite["url"]
-    return "%s:%d-%d" % (cite["path"], cite["line_start"], cite["line_end"])
-
-
-def _quote(text: str) -> str:
-    return "\n".join("> " + ln if ln else ">" for ln in text.split("\n"))
-
-
-def _fence(code: str) -> str:
-    longest = max([len(m) for m in re.findall(r"`+", code)] + [2])
-    ticks = "`" * (longest + 1)
-    return "%s\n%s\n%s" % (ticks, code.rstrip("\n"), ticks)
-
-
 def _topic_body(meta: dict, head: dict, topics: list) -> str:
     numbers = {t["slug"]: t["number"] for t in topics}
     pre = " ".join(_link(numbers[d], d) for d in head.get("depends_on", []) if d in numbers)
@@ -257,12 +204,9 @@ def _topic_body(meta: dict, head: dict, topics: list) -> str:
                                       _lab(meta, "back"), _stem(meta)), ""]
     for block in head["blocks"]:
         lines += ["## %s" % _lab(meta, block["kind"]), ""]
-        for claim in block["claims"]:
-            lines += [claim["text"], ""]
-            for cite in claim.get("sources", []):
-                lines += [_quote(cite["excerpt"]), ">", _quote("— " + _source_line(cite)), ""]
+        lines += support.render_claims(block["claims"])
         if block.get("code"):
-            lines += [_fence(block["code"]), ""]
+            lines += [support.fence(block["code"]), ""]
     return "\n".join(lines)
 
 
@@ -276,7 +220,7 @@ def _load_syllabus(folder: Path, meta: dict) -> list:
 
 def save_topic(dossier_id: str, data) -> dict:
     _validate_topic(data)
-    _check_support(data)
+    support.check_blocks(data, data["blocks"])
     dossier.require(dossier_id)
     with store.locked(dossier_id) as folder:
         meta, _ = dossier.load(dossier_id)
@@ -285,23 +229,10 @@ def save_topic(dossier_id: str, data) -> dict:
         if entry is None:
             raise BlockedError("topic_not_found",
                                "The syllabus has no topic %r." % data["slug"])
-        flat = [c for b in data["blocks"] for c in b["claims"]]
-        resolved, bad = sources.check_claims(dossier_id, flat)
-        if bad:
-            where, k = [], 0
-            for b in data["blocks"]:
-                for j in range(len(b["claims"])):
-                    if k in bad:
-                        errs = sorted({c["error"] for c in resolved[k]["sources"] if "error" in c}
-                                      | ({resolved[k]["error"]} if "error" in resolved[k] else set()))
-                        where.append("%s[%d] (%s)" % (b["kind"], j, ", ".join(errs) or "unverified"))
-                    k += 1
-            raise BlockedError("unverified_claims",
-                               "Citations not verified, fix or remove: %s." % "; ".join(where))
-        out_blocks, k = [], 0
-        for b in data["blocks"]:
-            item = {"kind": b["kind"], "claims": resolved[k:k + len(b["claims"])]}
-            k += len(b["claims"])
+        resolved = support.resolve_blocks(dossier_id, data["blocks"])
+        out_blocks = []
+        for b, claims in zip(data["blocks"], resolved):
+            item = {"kind": b["kind"], "claims": claims}
             if b.get("code"):
                 item["code"] = b["code"]
                 item["code_support"] = b["code_support"]
@@ -314,7 +245,7 @@ def save_topic(dossier_id: str, data) -> dict:
         store.atomic_write(path, frontmatter.dump(head, _topic_body(meta, head, topics)))
         progress.clear_outdated(folder, meta, entry["slug"])
     return {"ok": True, "id": dossier_id, "slug": entry["slug"], "number": entry["number"],
-            "path": str(path), "claims": len(flat)}
+            "path": str(path), "claims": sum(len(c) for c in resolved)}
 
 
 def show_topic(dossier_id: str, slug: str) -> dict:
