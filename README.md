@@ -13,12 +13,14 @@ A collection of agent skills, installable with the [`skills`](https://github.com
 | Skill | What it does |
 |---|---|
 | `explain-changes` | Tells you in under two minutes what the AI did on your current Git branch (the few things that matter and which project rules seem not to be met) and writes a short report plus an HTML report with the code. Read-only. Usage guide: [docs/explain-changes.md](docs/explain-changes.md) |
+| `teach-me` | Researches a library, framework or tool from a URL (docs, website, public code) and teaches it like a professor who already prepared the subject: an ordered syllabus, step by step lessons, doubts answered from saved sources and graded exams. Everything is saved as Markdown in `~/.teach-me/`. Usage guide: [docs/teach-me.md](docs/teach-me.md) |
 
 ### Install
 
 ```bash
 npx skills add CodeLab614-AI/skills                          # interactive picker
 npx skills add CodeLab614-AI/skills --skill explain-changes  # only this skill
+npx skills add CodeLab614-AI/skills --skill teach-me         # only teach-me
 npx skills add CodeLab614-AI/skills --list                   # list the skills, install nothing
 npx skills add CodeLab614-AI/skills --all                    # install every skill
 ```
@@ -63,12 +65,14 @@ Colección de skills para agentes, instalables con la CLI [`skills`](https://git
 | Skill | Qué hace |
 |---|---|
 | `explain-changes` | Te cuenta en menos de 2 minutos qué hizo la IA en tu rama de Git (las pocas cosas que importan y qué reglas del proyecto parecen no cumplirse) y escribe un reporte corto y otro en HTML con el código. Solo lectura. Guía de uso: [docs/explain-changes.md](docs/explain-changes.md) |
+| `teach-me` | Investiga una librería, framework o herramienta a partir de una URL (documentación, sitio, código público) y te la enseña como un profesor que ya preparó la materia: temario ordenado, lecciones paso a paso, dudas respondidas con fuentes guardadas y exámenes calificados. Todo se guarda en Markdown en `~/.teach-me/`. Guía de uso: [docs/teach-me.md](docs/teach-me.md) |
 
 ### Instalación
 
 ```bash
 npx skills add CodeLab614-AI/skills                          # selector interactivo
 npx skills add CodeLab614-AI/skills --skill explain-changes  # solo esta skill
+npx skills add CodeLab614-AI/skills --skill teach-me         # solo teach-me
 npx skills add CodeLab614-AI/skills --list                   # lista las skills, no instala nada
 npx skills add CodeLab614-AI/skills --all                    # instala todas las skills
 ```
