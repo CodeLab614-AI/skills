@@ -13,7 +13,7 @@ def js(obj):
 
 
 def npm_doc(version):
-    return js({"dist-tags": {"latest": version}, "versions": {version: {"license": "MIT"}}})
+    return js({"name": "ai", "version": version, "license": "MIT"})
 
 
 def gh(sha="aaa", tags=()):
@@ -45,7 +45,7 @@ PKG_LINKS = {"package": {"registry": "npm", "name": "ai"}, "repo": "https://gith
 
 class UpdateTests(unittest.TestCase):
     def test_package_unchanged(self):
-        with FixtureServer(dict(gh(), **{"/ai": npm_doc("1.0.0")})) as srv, TempHome():
+        with FixtureServer(dict(gh(), **{"/ai/latest": npm_doc("1.0.0")})) as srv, TempHome():
             did = prepare(srv, pkg_version(), PKG_LINKS)
             code, out = run_script("check-update", did, env=srv.env())
             self.assertEqual(code, 0, out)
@@ -53,7 +53,7 @@ class UpdateTests(unittest.TestCase):
                                    "from": "1.0.0", "to": "1.0.0", "new_tag": None})
 
     def test_package_new_version_with_tag(self):
-        routes = dict(gh(tags=["ai@2.0.0"]), **{"/ai": npm_doc("2.0.0")})
+        routes = dict(gh(tags=["ai@2.0.0"]), **{"/ai/latest": npm_doc("2.0.0")})
         with FixtureServer(routes) as srv, TempHome():
             did = prepare(srv, pkg_version(), PKG_LINKS)
             before = dossier.load(did)[0]
@@ -65,7 +65,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_monorepo_other_packages_ignored(self):
         # "other" is stored at 3.0.0 and must never be queried; only "ai" is.
-        with FixtureServer(dict(gh(), **{"/ai": npm_doc("1.0.0")})) as srv, TempHome():
+        with FixtureServer(dict(gh(), **{"/ai/latest": npm_doc("1.0.0")})) as srv, TempHome():
             did = prepare(srv, pkg_version(), PKG_LINKS)
             code, out = run_script("check-update", did, env=srv.env())
             self.assertEqual((code, out["changed"]), (0, False))

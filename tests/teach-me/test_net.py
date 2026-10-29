@@ -66,11 +66,10 @@ class NetTests(unittest.TestCase):
                 self.assertNotIn("Authorization", target.requests[0]["headers"])
 
     def test_token_only_sent_to_github(self):
-        npm = json.dumps({"dist-tags": {"latest": "1.0.0"},
-                          "versions": {"1.0.0": {"license": "MIT"}}}).encode()
+        npm = json.dumps({"name": "pkg", "version": "1.0.0", "license": "MIT"}).encode()
         repo = json.dumps({"full_name": "o/r", "default_branch": "main",
                            "license": {"spdx_id": "MIT"}}).encode()
-        routes = {"/pkg": (200, "application/json", npm),
+        routes = {"/pkg/latest": (200, "application/json", npm),
                   "/repos/o/r": (200, "application/json", repo),
                   "/repos/o/r/commits/main": (200, "application/json", b'{"sha":"abc123"}')}
         with FixtureServer(routes) as srv, FixtureServer(routes) as gh, TempHome() as home:

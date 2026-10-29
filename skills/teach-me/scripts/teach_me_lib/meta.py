@@ -84,11 +84,12 @@ def registry_package(registry: str, name: str):
     """Latest version of one package. Returns (pkg, meta_file_name, raw_text, final_url)."""
     if registry == "npm":
         url = "%s/%s" % (net.base("npm"), quote(name, safe="@").replace("/", "%2F"))
+        url += "/latest"  # one small version document, not the full packument
         data, text, final = _get_json(url, "npm package %s" % name)
-        latest = (data.get("dist-tags") or {}).get("latest")
-        if not latest:
+        latest = data.get("version") if isinstance(data, dict) else None
+        if not latest or not isinstance(latest, str):
             raise BlockedError("fetch_failed", "npm package %s has no latest version." % name)
-        lic = _clean_license(((data.get("versions") or {}).get(latest) or {}).get("license"))
+        lic = _clean_license(data.get("license"))
         return ({"registry": "npm", "name": name, "latest": latest, "license": lic},
                 "npm.md", text, final)
     if registry == "pypi":

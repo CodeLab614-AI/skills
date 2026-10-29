@@ -13,7 +13,8 @@ def js(obj):
 
 
 def npm_doc(version="7.0.155", lic="Apache-2.0"):
-    return js({"dist-tags": {"latest": version}, "versions": {version: {"license": lic}}})
+    return js({"name": "ai", "version": version, "license": lic,
+               "repository": {"type": "git", "url": "git+https://github.com/vercel/ai.git"}})
 
 
 def gh_routes(spdx="Apache-2.0", tags=()):
@@ -37,7 +38,7 @@ def fetch(srv, *extra):
 
 class MetaTests(unittest.TestCase):
     def test_npm_and_github_license_match(self):
-        routes = dict(gh_routes(tags=["ai@7.0.155"]), **{"/ai": npm_doc()})
+        routes = dict(gh_routes(tags=["ai@7.0.155"]), **{"/ai/latest": npm_doc()})
         with FixtureServer(routes) as srv, TempHome():
             setup(srv)
             code, out = fetch(srv)
@@ -51,8 +52,18 @@ class MetaTests(unittest.TestCase):
             self.assertEqual(meta["version"]["kind"], "package")
             self.assertIn("meta", meta["phases"])
 
+    def test_huge_full_packument_is_not_requested(self):
+        big = {"dist-tags": {"latest": "0.0.1"}, "versions": {}, "pad": "x" * (5 * 1024 * 1024 + 10)}
+        routes = {"/ai": js(big), "/ai/latest": npm_doc("7.0.155")}
+        with FixtureServer(routes) as srv, TempHome():
+            run_script("init", "https://github.com/vercel/ai", "--lang", "en", env=srv.env())
+            code, out = run_script("fetch-meta", "ai", "--npm", "ai", env=srv.env())
+            self.assertEqual(code, 0, out)
+            self.assertEqual(out["package"]["latest"], "7.0.155")
+            self.assertEqual(out["package"]["license"], "Apache-2.0")
+
     def test_scoped_npm_name_is_url_encoded(self):
-        routes = {"/@s%2Fp": npm_doc("1.0.0", {"type": "MIT"})}
+        routes = {"/@s%2Fp/latest": npm_doc("1.0.0", {"type": "MIT"})}
         with FixtureServer(routes) as srv, TempHome():
             setup(srv)
             code, out = run_script("fetch-meta", "ai", "--npm", "@s/p", env=srv.env())
@@ -75,7 +86,7 @@ class MetaTests(unittest.TestCase):
             self.assertEqual(meta["version"]["value"], "deadbeef")
 
     def test_license_mismatch_is_reported(self):
-        routes = dict(gh_routes(spdx="NOASSERTION"), **{"/ai": npm_doc()})
+        routes = dict(gh_routes(spdx="NOASSERTION"), **{"/ai/latest": npm_doc()})
         with FixtureServer(routes) as srv, TempHome():
             setup(srv)
             code, out = fetch(srv)
@@ -95,7 +106,7 @@ class MetaTests(unittest.TestCase):
             self.assertEqual(paths, ["/repos/vercel/ai/git/ref/tags/ai@7.0.155"])
 
     def test_tag_not_found_notice(self):
-        routes = dict(gh_routes(), **{"/ai": npm_doc()})
+        routes = dict(gh_routes(), **{"/ai/latest": npm_doc()})
         with FixtureServer(routes) as srv, TempHome():
             setup(srv)
             code, out = fetch(srv)
@@ -106,7 +117,7 @@ class MetaTests(unittest.TestCase):
             self.assertEqual(meta["version"]["label"], "deadbeef")
 
     def test_rate_limited_is_blocked(self):
-        routes = {"/ai": npm_doc(), "/repos/vercel/ai": (403, "text/plain", b"limit")}
+        routes = {"/ai/latest": npm_doc(), "/repos/vercel/ai": (403, "text/plain", b"limit")}
         with FixtureServer(routes) as srv, TempHome():
             setup(srv)
             code, out = fetch(srv)
@@ -115,7 +126,7 @@ class MetaTests(unittest.TestCase):
             self.assertIn("GITHUB_TOKEN", out["error"]["message"])
 
     def test_meta_saved_as_markdown(self):
-        routes = dict(gh_routes(), **{"/ai": npm_doc()})
+        routes = dict(gh_routes(), **{"/ai/latest": npm_doc()})
         with FixtureServer(routes) as srv, TempHome() as home:
             setup(srv)
             fetch(srv)
@@ -129,7 +140,7 @@ class MetaTests(unittest.TestCase):
             self.assertIn("fetched_at", header)
             self.assertIn("```json", body)
             inner = body.split("```json\n", 1)[1].rsplit("```", 1)[0]
-            self.assertEqual(json.loads(inner)["dist-tags"]["latest"], "7.0.155")
+            self.assertEqual(json.loads(inner)["version"], "7.0.155")
 
     def test_fetch_meta_needs_dossier_and_source(self):
         with TempHome() as home:
