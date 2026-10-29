@@ -238,6 +238,19 @@ def page_path(dossier_id: str, url: str) -> "Path | None":
     return path if path.is_file() else None
 
 
+def store_page(dossier_id: str, url: str, markdown: str, origin: str) -> Path:
+    """Write one page file exactly as fetch-docs does. Call it under the dossier lock.
+
+    It does not touch _pages.md: that index lists the library's own documentation pages."""
+    meta, _ = dossier.load(dossier_id)
+    docs_dir = _docs_dir(store.dossier_dir(dossier_id), meta)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    path = docs_dir / _file_name(url)
+    store.atomic_write(path, frontmatter.dump(
+        {"teach_me": "page", "url": url, "fetched_at": _now(), "origin": origin}, markdown))
+    return path
+
+
 def _entry(url: str, state: str = "pending", reason=None) -> dict:
     return {"url": url, "state": state, "reason": reason}
 
@@ -334,9 +347,7 @@ def _flush(dossier_id: str, results: list, extra_urls: list, finish: bool) -> No
                 continue
             if isinstance(outcome, tuple):
                 origin, markdown = outcome
-                store.atomic_write(docs_dir / _file_name(url), frontmatter.dump(
-                    {"teach_me": "page", "url": url, "fetched_at": _now(), "origin": origin},
-                    markdown))
+                store_page(dossier_id, url, markdown, origin)
                 entry["state"], entry["reason"] = "ok", None
             else:
                 entry["state"], entry["reason"] = "failed", outcome

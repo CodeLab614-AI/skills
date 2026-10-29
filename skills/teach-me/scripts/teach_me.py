@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, config, docs, dossier, exams, meta, progress, search, sources, store, topics, update  # noqa: E402
+from teach_me_lib import built, code, competitors, config, docs, dossier, exams, meta, modes, overview, progress, search, sources, store, topics, update  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -61,8 +61,23 @@ def _cmd_discard(args) -> dict:
     return dossier.discard(args.id)
 
 
+def _cmd_set_mode(args) -> dict:
+    return modes.set_mode(args.id, args.mode)
+
+
 def _cmd_fetch_meta(args) -> dict:
     return meta.fetch_meta(args.id, args.npm, args.pypi, args.repo)
+
+
+def _cmd_search_packages(args) -> dict:
+    if bool(args.npm) == bool(args.pypi):
+        raise BlockedError("bad_input", "Give --npm or --pypi (exactly one).")
+    registry, text = ("npm", args.npm) if args.npm else ("pypi", args.pypi)
+    return competitors.search_packages(args.id, registry, text, args.size)
+
+
+def _cmd_fetch_competitor(args) -> dict:
+    return competitors.fetch_competitor(args.id, args.repo, args.npm, args.pypi)
 
 
 def _cmd_update_profile(args) -> dict:
@@ -78,6 +93,10 @@ def _cmd_fetch_docs(args) -> dict:
 
 
 def _cmd_fetch_code(args) -> dict:
+    if args.full and args.path is not None:
+        raise BlockedError("bad_input", "Give --full or --path, not both.")
+    if args.full:
+        return code.fetch_full(args.id, args.repo, args.ref)
     if args.path is not None:
         return code.fetch_path(args.id, args.path, args.repo, args.ref)
     if not args.repo or not args.ref:
@@ -128,6 +147,18 @@ def _cmd_save_topic(args) -> dict:
 
 def _cmd_show_topic(args) -> dict:
     return topics.show_topic(args.id, args.slug)
+
+
+def _cmd_save_overview(args) -> dict:
+    return overview.save_overview(args.id, _read_stdin_json())
+
+
+def _cmd_save_built(args) -> dict:
+    return built.save_built(args.id, _read_stdin_json())
+
+
+def _cmd_show_part(args) -> dict:
+    return overview.show_part(args.id, args.part)
 
 
 def _cmd_check_update(args) -> dict:
@@ -191,6 +222,18 @@ def _register() -> None:
         p.add_argument("--pypi")
         p.add_argument("--repo")
 
+    def cfg_search_packages(p):
+        p.add_argument("id")
+        p.add_argument("--npm")
+        p.add_argument("--pypi")
+        p.add_argument("--size", type=int, default=10)
+
+    def cfg_fetch_competitor(p):
+        p.add_argument("id")
+        p.add_argument("--repo", required=True)
+        p.add_argument("--npm")
+        p.add_argument("--pypi")
+
     def cfg_discover_docs(p):
         p.add_argument("id")
         p.add_argument("docs_url")
@@ -205,6 +248,7 @@ def _register() -> None:
         p.add_argument("--repo")
         p.add_argument("--ref")
         p.add_argument("--path")
+        p.add_argument("--full", action="store_true")
 
     def cfg_search(p):
         p.add_argument("id")
@@ -228,6 +272,9 @@ def _register() -> None:
     COMMANDS["save-syllabus"] = (lambda p: p.add_argument("id"), _cmd_save_syllabus)
     COMMANDS["save-topic"] = (lambda p: p.add_argument("id"), _cmd_save_topic)
     COMMANDS["show-topic"] = (cfg_show_topic, _cmd_show_topic)
+    COMMANDS["save-overview"] = (lambda p: p.add_argument("id"), _cmd_save_overview)
+    COMMANDS["save-built"] = (lambda p: p.add_argument("id"), _cmd_save_built)
+    COMMANDS["show-part"] = (lambda p: (p.add_argument("id"), p.add_argument("part")), _cmd_show_part)
     COMMANDS["config"] = (lambda p: p.add_argument("--agent"), _cmd_config)
     COMMANDS["search"] = (cfg_search, _cmd_search)
     COMMANDS["excerpts"] = (lambda p: p.add_argument("id"), _cmd_excerpts)
@@ -235,9 +282,12 @@ def _register() -> None:
     COMMANDS["discover-docs"] = (cfg_discover_docs, _cmd_discover_docs)
     COMMANDS["fetch-docs"] = (cfg_fetch_docs, _cmd_fetch_docs)
     COMMANDS["fetch-meta"] = (cfg_fetch_meta, _cmd_fetch_meta)
+    COMMANDS["search-packages"] = (cfg_search_packages, _cmd_search_packages)
+    COMMANDS["fetch-competitor"] = (cfg_fetch_competitor, _cmd_fetch_competitor)
     COMMANDS["update-profile"] = (lambda p: p.add_argument("id"), _cmd_update_profile)
     COMMANDS["init"] = (cfg_init, _cmd_init)
     COMMANDS["discard"] = (lambda p: p.add_argument("id"), _cmd_discard)
+    COMMANDS["set-mode"] = (lambda p: (p.add_argument("id"), p.add_argument("mode")), _cmd_set_mode)
     COMMANDS["add-root"] = (cfg_add_root, _cmd_add_root)
 
 

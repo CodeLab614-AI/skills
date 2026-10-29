@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 The person used to read the docs and the code of a library by themselves, and that is how they learned. Now they ask an AI for a summary and it does not stick, because the AI did the understanding. You act as **a professor who already did the research**: you investigate everything once, save it, teach topic by topic, answer doubts from what was saved, and examine the person at the end of each topic. A bundled script does the mechanical work and is the **only writer**; you read, understand, write the material and teach.
 
-Speak to the person in the language of the conversation. This file and the script's JSON keys are in English. Phase 1 supports one mode, "Study how to use it". The skill never uses Git, never executes downloaded code, and never writes the person's own notes (they write those in Notion).
+Speak to the person in the language of the conversation. This file and the script's JSON keys are in English. The skill never uses Git, never executes downloaded code, and never writes the person's own notes (they write those in Notion).
 
 ## 0. Before anything
 
@@ -33,12 +33,12 @@ Speak to the person in the language of the conversation. This file and the scrip
 
 Ask "What do you want to do?" with these four options, translated into the language of the conversation (the parenthetical notes are translated too). In Claude Code use a selection menu; in other agents a numbered list.
 
-1. Know what it is - *coming soon*
-2. Know what it is and how it is built (must be open source) - *coming soon*
+1. Know what it is
+2. Know what it is and how it is built (must be open source)
 3. Study how to use it
-4. Study how to use it and how it is built (must be open source) - *coming soon*
+4. Study how to use it and how it is built (must be open source)
 
-If the person picks a "coming soon" option, say it is not built yet and offer "Study how to use it". Do not improvise those modes. The mode id passed to the script is `use`.
+The mode id passed to the script is, in order, `overview`, `overview-internals`, `use`, `use-internals`. Modes 1 and 2 are conversational: a researched report (and, in mode 2, a tour of how it is built), no syllabus and no exams. Modes 3 and 4 are the study flow of sections 5 to 9; mode 4 adds a second syllabus part about how it is built.
 
 ## 2. The URL
 
@@ -48,29 +48,31 @@ If the invocation had no URL, run `python3 "<SKILL_DIR>/scripts/teach_me.py" lis
 
 `python3 "<SKILL_DIR>/scripts/teach_me.py" lookup <url>` returns `match`:
 
-- `existing` with status `ready`: run `check-update` (section 10), then resume (section 9). Say what exists (mode, current topic, pending ones).
+- `existing` with status `ready`: run `check-update` (section 10), then resume (section 9). Say what exists (mode, pieces done, current topic, pending ones), ask the mode with the same four options of section 1, and run `python3 "<SKILL_DIR>/scripts/teach_me.py" set-mode <id> <mode>`. Do only what `missing_parts` lists, reusing everything downloaded; if `needs_full_code` is true, run `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-code <id> --full` first. Moving to a mode with fewer pieces deletes nothing: `set_aside_parts` lists what stays set aside in case the person comes back (set-aside topics are not pending). Details per piece are in [references/overview.md](references/overview.md) and [references/built.md](references/built.md).
 - `existing` with status `investigating`: resume the research from the first phase not finished (section 4); the script skips what is already downloaded. Do not teach from an `investigating` dossier.
 - `ambiguous`: show the `candidates` and ask whether it is the same library. If yes, run `python3 "<SKILL_DIR>/scripts/teach_me.py" add-root <id> <url>`; if no, create a new one with `init` as below.
-- `new`: `python3 "<SKILL_DIR>/scripts/teach_me.py" init <url> --lang <code> --mode use`, with `<code>` the conversation language. Spanish (`es`) and English (`en`) have built-in file names. For any other language, translate the names once (keys listed in [references/research.md](references/research.md)) and add `--names-stdin` with the JSON object on stdin. If the mode is blocked with `mode_not_available`, go back to section 1.
+- `new`: `python3 "<SKILL_DIR>/scripts/teach_me.py" init <url> --lang <code> --mode <mode>`, with `<code>` the conversation language. Spanish (`es`) and English (`en`) have built-in file names. For any other language, translate the names once (keys listed in [references/research.md](references/research.md)) and add `--names-stdin` with the JSON object on stdin.
 
 ## 4. Research (do it all, once)
 
-Phases, in order; each one is recorded in the profile so a cut research resumes: `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-meta` -> `python3 "<SKILL_DIR>/scripts/teach_me.py" update-profile` -> `python3 "<SKILL_DIR>/scripts/teach_me.py" discover-docs` -> `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-docs` -> `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-code`. Details, flags, what to read and how to declare coverage are in [references/research.md](references/research.md). The rules:
+Phases, in order; each one is recorded in the profile so a cut research resumes: `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-meta` -> `python3 "<SKILL_DIR>/scripts/teach_me.py" update-profile` -> `python3 "<SKILL_DIR>/scripts/teach_me.py" discover-docs` -> `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-docs` -> `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-code`. Modes 1 and 2 research lighter (entry pages and key code only; "Light research" in [references/research.md](references/research.md)). Details, flags, what to read and how to declare coverage are in [references/research.md](references/research.md). The rules:
 
 - After `fetch-meta`, if its output has `same_repo_as`, another dossier already uses that repository (a monorepo package, for example). Ask the person exactly like a doubtful match: show those candidates and ask whether this is the same library they already study. If yes: run `python3 "<SKILL_DIR>/scripts/teach_me.py" discard <new id>` (it moves the new dossier to `.discarded` and deletes nothing), then `python3 "<SKILL_DIR>/scripts/teach_me.py" add-root <existing id> <the URL the person gave>`, and continue with the existing dossier as in section 3 (resume it). If no, continue the research of the new dossier.
 
+- Modes 1 and 2 add the overview report ([references/overview.md](references/overview.md)). Competitor candidates: `python3 "<SKILL_DIR>/scripts/teach_me.py" search-packages <id> --npm "<text>" [--size N]` (PyPI has no search). Verify each: `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-competitor <id> --repo OWNER/NAME [--npm NAME | --pypi NAME]`; none comes from memory. Save the report with `python3 "<SKILL_DIR>/scripts/teach_me.py" save-overview <id>` (JSON on stdin) and read it back with `python3 "<SKILL_DIR>/scripts/teach_me.py" show-part <id> overview`.
+- Mode 2 adds the tour of how it is built ([references/built.md](references/built.md)): `python3 "<SKILL_DIR>/scripts/teach_me.py" save-built <id>` (JSON on stdin), read back with `show-part <id> built`. Both reports are written from the saved sources like a topic: `excerpts`, the support worker, then the save (sources.md).
 - Before downloading, tell the person the approximate size (`size_kb` of the repo, `page_count` of the docs). Do **not** ask for confirmation: they asked for everything. Only technical safety limits apply, and whatever they leave out is declared in the coverage.
-- **No public GitHub repository** (design 8.5): do not call `fetch-code`. Run `update-profile` with `public_code: false` and tell the person it will be studied from the documentation only. If there is no public usage documentation either, say that "Study how to use it" is not possible for this URL and stop. Never deduce how it is built from indirect signs and never reverse engineer anything.
-- Code you read, by priority in mode `use`: package exports and entry point, public types, examples, usage tests, changelog.
+- **No public GitHub repository**: do not call `fetch-code`. Run `update-profile` with `public_code: false`. In modes 2 and 4 say at the start that "how it is built" cannot be explained without public code and offer the equivalent mode without that piece (2 -> 1, 4 -> 3, with `set-mode`); `set-mode`, `save-built` and `save-syllabus` block with `no_public_code`. Otherwise tell the person it will be studied from the documentation only. If there is no public usage documentation either, say that "Study how to use it" is not possible for this URL (offer mode 1) and stop. Never deduce how it is built from indirect signs and never reverse engineer anything.
+- Code you read, by priority in mode `use` (modes 1 and 2 read less, modes 2 and 4 also read the internal modules; see research.md and built.md): package exports and entry point, public types, examples, usage tests, changelog.
 - If the docs and the code disagree, **the code wins** and the discrepancy goes into the coverage.
 - Declare in the coverage what was read, what was left out, and every page that failed.
-- In mode `use`, if the repository is a monorepo, `fetch-code` keeps only the root files (README, LICENSE, CHANGELOG, `package.json`, `pyproject.toml`), the main package and up to 300 examples that import it, spread across the example folders. Everything else is listed in the coverage as `not_saved`.
+- In modes 1 and 3, if the repository is a monorepo, `fetch-code` keeps only the root files (README, LICENSE, CHANGELOG, `package.json`, `pyproject.toml`), the main package and up to 300 examples that import it, spread across the example folders. Everything else is listed in the coverage as `not_saved`.
 
-## 5. Syllabus
+## 5. Syllabus (modes 3 and 4)
 
-Write the syllabus from what was downloaded and send it to `python3 "<SKILL_DIR>/scripts/teach_me.py" save-syllabus` (only `part: "use"`; shape in [references/lessons.md](references/lessons.md)). Show it to the person with the reason each topic goes where it goes and its objective. Order by prerequisites: no topic uses what was not seen before. The syllabus should take one or two days. The person cannot edit it but may skip a topic: `python3 "<SKILL_DIR>/scripts/teach_me.py" progress <id> skip --topic <slug>`.
+Write the syllabus from what was downloaded and send it to `python3 "<SKILL_DIR>/scripts/teach_me.py" save-syllabus` (`part: "use"` first and, in mode 4 only, a second part `internals` after it; shape in [references/lessons.md](references/lessons.md)). Show it to the person with the reason each topic goes where it goes and its objective. Order by prerequisites: no topic uses what was not seen before. The syllabus should take one or two days. The person cannot edit it but may skip a topic: `python3 "<SKILL_DIR>/scripts/teach_me.py" progress <id> skip --topic <slug>`.
 
-## 6. Lesson
+## 6. Lesson (modes 3 and 4)
 
 1. `python3 "<SKILL_DIR>/scripts/teach_me.py" progress <id> start --topic <slug>`. If `at_risk` is not empty, a prerequisite is pending or skipped: tell the person and offer to review it first, without blocking.
 2. Write the topic from the downloaded sources, following [references/sources.md](references/sources.md): `python3 "<SKILL_DIR>/scripts/teach_me.py" excerpts`, then the support worker, then `python3 "<SKILL_DIR>/scripts/teach_me.py" save-topic`. Nothing reaches a topic file unsupported.
@@ -104,11 +106,11 @@ Full protocol and prompts in [references/exams.md](references/exams.md):
 
 ## 10. New version
 
-On a `ready` dossier run `python3 "<SKILL_DIR>/scripts/teach_me.py" check-update <id>`. If `changed` is true, say so and update only what changed, in this order:
+On a `ready` dossier run `python3 "<SKILL_DIR>/scripts/teach_me.py" check-update <id>`. If `changed` is true, say so and update only what changed, in this order (in modes 1 and 2 stop after step 5 and regenerate the report from the new downloads, and in mode 2 the tour too, with `save-overview` / `save-built`; steps 6 onward are for modes 3 and 4):
 
 1. Read the changelog between `from` and `to`.
 2. `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-meta <id>` again (same `--npm`/`--pypi`/`--repo` flags as before); it stores the new version and label.
-3. `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-code <id> --repo <owner/name> --ref <ref>`, with `<ref>` = `new_tag` when present. If `new_tag` is null (a package without a tag, or any `snapshot`), use the new head sha: `to` for a snapshot, or `repo.head_sha` from the new `fetch-meta` output for a package. Skip this step when the dossier has no public code.
+3. `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-code <id> --repo <owner/name> --ref <ref>`, with `<ref>` = `new_tag` when present. If `new_tag` is null (a package without a tag, or any `snapshot`), use the new head sha: `to` for a snapshot, or `repo.head_sha` from the new `fetch-meta` output for a package. Skip this step when the dossier has no public code. In modes 2 and 4 the whole repository is saved automatically; do not add `--full`.
 4. `python3 "<SKILL_DIR>/scripts/teach_me.py" discover-docs <id> <docs_url>` again to add new pages, then `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-docs <id>` to download them.
 5. For each page the changelog says changed, `python3 "<SKILL_DIR>/scripts/teach_me.py" fetch-docs <id> --url <page> --refresh` (without `--refresh`, a page already downloaded is never fetched again).
 6. Mark each affected topic with `python3 "<SKILL_DIR>/scripts/teach_me.py" progress <id> outdated --topic <slug>` and extend the syllabus with `python3 "<SKILL_DIR>/scripts/teach_me.py" save-syllabus <id>` if new topics are needed (progress is kept by slug). Re-saving an outdated topic clears the mark.
@@ -125,5 +127,5 @@ Three helpers do cheap tasks: **consult**, **support** and **grading**. Their mo
 - Never write files yourself: only through the script. Never use Git.
 - Never launch workers in parallel.
 - Never accept a name instead of a URL, or search for a library by name.
-- Never document or run the other three modes: they are coming soon.
+- Never put in a report or tour what the saved sources do not show; the licence, versions and dates of the competitors table are written by the script, not by you.
 - Never ask for, store or print a `GITHUB_TOKEN`: if a `github_rate_limited` block appears, tell the person to set the `GITHUB_TOKEN` environment variable and retry.

@@ -16,8 +16,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _get_json(url: str, what: str):
+def _get_json(url: str, what: str, missing_ok: bool = False):
+    """(data, raw_text, final_url); with missing_ok a 404 gives None instead of raising."""
     resp = net.get(url, MAX_BYTES)
+    if resp.status == 404 and missing_ok:
+        return None
     if resp.status == 404:
         raise BlockedError("fetch_failed", "%s was not found (HTTP 404)." % what)
     if resp.status != 200:
@@ -46,6 +49,12 @@ def _clean_license(value):
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _repo_license(data):
+    """SPDX id of the GitHub repository licence; NOASSERTION (not recognised) is None."""
+    lic = _clean_license((data.get("license") or {}).get("spdx_id"))
+    return None if lic and lic.upper() == "NOASSERTION" else lic
 
 
 def _same_license(a, b):
@@ -120,6 +129,49 @@ def head_sha(slug: str) -> "str | None":
     return cdata.get("sha")
 
 
+def _get_json_or_none(url: str, what: str):
+    """The JSON document, or None on a 404; every other failure still raises."""
+    got = _get_json(url, what, missing_ok=True)
+    return got[0] if got else None
+
+
+def _tag_commit_date(slug: str, tag: str) -> "str | None":
+    """Committer date of the commit a tag points to (follows an annotated tag once)."""
+    api = net.base("github_api")
+    ref = _get_json_or_none("%s/repos/%s/git/ref/tags/%s" % (api, slug, quote(tag, safe="@/")),
+                            "tag %s" % tag)
+    obj = (ref or {}).get("object") or {}
+    if obj.get("type") == "tag" and obj.get("sha"):
+        annotated = _get_json_or_none("%s/repos/%s/git/tags/%s" % (api, slug, quote(obj["sha"], safe="")),
+                                      "annotated tag %s" % tag)
+        obj = (annotated or {}).get("object") or {}
+    if obj.get("type") != "commit" or not obj.get("sha"):
+        return None
+    commit = _get_json_or_none("%s/repos/%s/commits/%s" % (api, slug, quote(obj["sha"], safe="")),
+                               "the commit of tag %s" % tag)
+    return (((commit or {}).get("commit") or {}).get("committer") or {}).get("date")
+
+
+def release_date(slug: str, tag: "str | None") -> "tuple[str | None, str | None]":
+    """(iso_date, source) of the last release: the exact tag's release, else its commit date.
+
+    Without a tag it is the repository's latest release. In a monorepo that one may belong to
+    another package, which is why the tag comes first. A 404 means "no release", not an error."""
+    api = net.base("github_api")
+    if tag:
+        data = _get_json_or_none("%s/repos/%s/releases/tags/%s" % (api, slug, quote(tag, safe="@/")),
+                                 "the release of tag %s" % tag)
+        date = data.get("published_at") if isinstance(data, dict) else None
+        if date:
+            return date, "release"
+        date = _tag_commit_date(slug, tag)
+        return (date, "tag_commit") if date else (None, None)
+    data = _get_json_or_none("%s/repos/%s/releases/latest" % (api, slug),
+                             "the latest release of %s" % slug)
+    date = data.get("published_at") if isinstance(data, dict) else None
+    return (date, "latest_release") if date else (None, None)
+
+
 def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
                repo: "str | None") -> dict:
     if npm and pypi:
@@ -140,6 +192,7 @@ def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
         out["package"] = pkg
 
     repo_info = None
+    last_commit_at = None
     if slug:
         api = net.base("github_api")
         data, text, final = _get_json("%s/repos/%s" % (api, slug), "GitHub repository %s" % slug)
@@ -151,10 +204,9 @@ def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
                 "%s/repos/%s/commits/%s" % (api, slug, quote(branch, safe="/")),
                 "the head commit of %s" % slug)
             head_sha = cdata.get("sha")
+            last_commit_at = ((cdata.get("commit") or {}).get("committer") or {}).get("date")
             files["github-commit.md"] = _meta_markdown(cfinal, ctext)
-        repo_lic = _clean_license((data.get("license") or {}).get("spdx_id"))
-        if repo_lic and repo_lic.upper() == "NOASSERTION":
-            repo_lic = None  # GitHub did not recognise the licence: unknown, not different
+        repo_lic = _repo_license(data)  # NOASSERTION: GitHub did not recognise it, so unknown
         repo_info = {
             "full_name": data.get("full_name") or slug, "default_branch": branch,
             "size_kb": data.get("size"),
@@ -186,6 +238,10 @@ def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
     else:
         version = None
     out["tag"] = tag
+    if slug:
+        released_at, source = release_date(slug, tag)
+        out["activity"] = {"last_release_at": released_at, "release_source": source,
+                           "last_commit_at": last_commit_at}
     out["notices"] = notices
 
     with store.locked(dossier_id) as folder:
@@ -199,6 +255,8 @@ def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
             version["docs_fingerprint"] = old.get("docs_fingerprint")
             profile["version"] = version
         profile["license"] = out["license"]
+        if "activity" in out:
+            profile["activity"] = out["activity"]
         profile.setdefault("phases", {})["meta"] = _now()
         dossier.save(dossier_id, profile)
         if slug and profile.get("status") == "investigating":

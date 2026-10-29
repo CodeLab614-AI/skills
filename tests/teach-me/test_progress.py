@@ -84,6 +84,59 @@ class TestProgress(ProgBase):
         self.prog_cmd("start", "--topic", "beta")
         self.assertEqual(self.statuses()["beta"], "in_progress")
 
+    def test_progress_on_set_aside_topic_blocks(self):
+        run_script("set-mode", self.did, "use-internals")
+        run_script("save-syllabus", self.did, stdin=json.dumps(
+            {"topics": [stopic("alpha"), stopic("core", part="internals")]}))
+        run_script("set-mode", self.did, "use")
+        for action in ("start", "skip", "doubt"):
+            code, out = self.prog_cmd(action, "--topic", "core", stdin="why")
+            self.assertEqual((code, out["error"]["code"]), (2, "part_not_in_mode"), action)
+        self.assertEqual(self.prog_cmd("outdated", "--topic", "core")[0], 0)
+        self.assertEqual(self.prog_cmd("start", "--topic", "alpha")[0], 0)
+
+    def _internals_pending(self):
+        """use-internals dossier: alpha (use) and core (internals, failed exam -> pending)."""
+        run_script("set-mode", self.did, "use-internals")
+        run_script("save-syllabus", self.did, stdin=json.dumps(
+            {"topics": [stopic("alpha"), stopic("core", part="internals")]}))
+        self.do_exam("core", 20)
+        self.assertEqual(self.prog_cmd("show")[1]["pending"], ["core"])
+
+    def test_set_aside_topics_are_not_pending(self):
+        self._internals_pending()
+        self.prog_cmd("skip", "--topic", "alpha")
+        run_script("set-mode", self.did, "use")
+        code, out = self.prog_cmd("show")
+        self.assertEqual(code, 0, out)
+        self.assertEqual([t["slug"] for t in out["topics"]], ["alpha"])
+        self.assertEqual(out["pending"], [])
+        self.assertEqual(out["skipped"], ["alpha"])
+        self.assertEqual(out["set_aside"], ["core"])
+        self.prog_cmd("touch")  # progress.md is rewritten on the next progress write
+        self.assertEqual(self.prog()["topics"]["core"]["status"], "pending")
+        self.assertEqual(len(self.prog()["topics"]["core"]["attempts"]), 1)
+        body = (self.base / self.n["progress"]).read_text(encoding="utf-8")
+        self.assertIn("Set aside", body)
+        self.assertEqual(body.count("Core"), 1)
+
+    def test_set_aside_does_not_trigger_needs_review(self):
+        self._internals_pending()
+        progress.touch(self.did, today="2026-01-01")
+        self.assertTrue(progress.show(self.did, today="2026-01-02")["needs_review"])
+        run_script("set-mode", self.did, "use")
+        self.assertFalse(progress.show(self.did, today="2026-01-02")["needs_review"])
+        self.assertFalse(progress.touch(self.did, today="2026-01-03")["needs_review"])
+
+    def test_switching_back_restores_the_topics(self):
+        self._internals_pending()
+        run_script("set-mode", self.did, "use")
+        run_script("set-mode", self.did, "use-internals")
+        code, out = self.prog_cmd("show")
+        self.assertEqual(out["pending"], ["core"])
+        self.assertEqual(out["set_aside"], [])
+        self.assertEqual(len(self.prog()["topics"]["core"]["attempts"]), 1)
+
     def test_needs_review_next_day(self):
         self.do_exam("alpha", 90)
         code, out = self.prog_cmd("touch")

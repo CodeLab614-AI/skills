@@ -1,8 +1,8 @@
 # teach-me — documento de diseño
 
-Fecha: 2026-10-28 · Versión 4 (cuatro modos como piezas que se suman; sin código público no hay
-«cómo está construida») · Estado: **aprobado por la persona** · Repositorio: `~/Desktop/skills`
-(CodeLab614-AI/skills)
+Fecha: 2026-10-28 · Versión 5 (2026-10-29: fase 1 entregada e integrada en `main` con el PR #3;
+recoge los cambios de su revisión y lo comprobado para la fase 2) · Estado: **aprobado por la
+persona** · Repositorio: `~/Desktop/skills` (CodeLab614-AI/skills)
 
 Cada decisión lleva su origen: **(persona)** = lo decidió la persona; **(propuesta aceptada)** = lo
 propuso la IA y la persona lo aprobó; **(decisión del diseño)** = lo decidió la IA al escribir este
@@ -73,9 +73,10 @@ consultando lo guardado, sin volver a internet **(persona)**.
 - Enseñar proyectos locales (carpetas del ordenador). Siempre es una URL **(persona)**. Entender los
   proyectos propios será otra herramienta.
 - Dar un veredicto de «te sirve» o «no te sirve». Lo decide la persona preguntando **(persona)**.
-- **Embeddings y búsqueda por significado.** Quedan fuera por ahora **(persona)**. El diseño no
-  debe impedir añadirlos después como un archivo regenerable junto a los Markdown.
-- Bases de datos (SQLite u otras). Todo se guarda en archivos **(persona)**.
+- **Embeddings y búsqueda por significado.** Fuera de las fases 1 y 2. Llegarán en una fase
+  posterior y serán **obligatorios**: el modelo y su clave en un `.env` (como softmaxdata/engram) y
+  los vectores en SQLite, que viene con Python **(persona, 2026-10-29)**. Hasta entonces, nada de
+  bases de datos: todo se guarda en archivos.
 - **Ingeniería inversa** (REA u otras herramientas). Sin código público no se explica cómo está
   construida, ni se deduce de señales indirectas **(persona)**.
 - Integrarse con Obsidian. Los expedientes son Markdown y se pueden abrir con él, pero la skill no
@@ -144,6 +145,13 @@ consultando lo guardado, sin volver a internet **(persona)**.
 - Es **dudosa** si coincide a la misma longitud con raíces de dos expedientes distintos, o si
   comparte dominio con un expediente sin empezar por ninguna de sus raíces. La skill pregunta,
   mostrando los candidatos.
+- **En los sitios compartidos por todos (revisión de la fase 1, persona):** en `github.com` cuenta
+  como mismo dominio solo el mismo dueño (`github.com/<dueño>`); en `npmjs.com`, solo el mismo scope
+  (`@scope`); en `pypi.org`, nunca. Antes, cualquier URL nueva de esos sitios salía dudosa.
+- **Mismo repositorio:** al terminar `fetch-meta` de un expediente nuevo, si su repositorio ya es
+  raíz de otro expediente, la salida trae `same_repo_as` y la skill pregunta como en una dudosa. Si
+  es la misma librería, `discard` aparta el expediente nuevo a `.discarded/` (sin borrar nada) y
+  `add-root` une la URL al existente.
 - Si la persona confirma que una URL dudosa es de un expediente existente, esa URL se añade como raíz
   de ese expediente. Si dice que no, se crea uno nuevo.
 - **Monorepos:** la URL de npm de otro paquete del mismo repositorio (por ejemplo,
@@ -246,6 +254,10 @@ oculta, se documenta un enlace simbólico visible en la guía de uso.
 - **Que la fuente exista no basta:** antes de guardar, cada afirmación se contrasta con su fragmento
   literal, en un worker de modelo bajo (§10) que solo recibe pares de afirmación y fragmento. Una
   afirmación que su fragmento no respalda se corrige o se elimina.
+- **El código de los ejemplos también (revisión de la fase 1, persona):** todo bloque con código
+  (ejemplo, «predice qué hace») pasa por el mismo worker con los fragmentos citados en ese bloque, y
+  solo se guarda con `code_support: "supported"`: cada import, función, opción o valor propio de la
+  librería tiene que aparecer en esos fragmentos.
 - **Protocolo (decisión del diseño):** 1) la IA manda las afirmaciones a `excerpts`, que resuelve
   las citas y devuelve los fragmentos; 2) el worker de respaldo recibe los pares y devuelve, por
   afirmación, `supported` o `unsupported`; 3) la IA manda a `save-*` cada afirmación con su veredicto
@@ -277,6 +289,15 @@ está construida»). Donde cambian, se dice.
 sirve para usarla: qué expone el paquete, los tipos públicos, los ejemplos, las pruebas que muestran
 el uso y el registro de cambios. En «cómo está construida» se leen además los módulos internos.
 
+**Qué código se guarda (revisión de la fase 1, persona):** el archivo comprimido se descarga
+entero, pero en un monorepo, en los modos sin «cómo está construida», solo se guardan los archivos
+de la raíz (README, LICENSE, CHANGELOG, `package.json`, `pyproject.toml`), la carpeta del paquete
+estudiado y hasta 300 ejemplos que lo importen, repartidos por turnos entre las subcarpetas de
+`examples/`. Lo demás queda anotado como `not_saved` y se baja cuando hace falta con
+`fetch-code --path`. Con el AI SDK son 6,5 MB en lugar de 87 MB. **(decisión del diseño, fase 2)**
+En los modos con «cómo está construida» se guarda el repositorio entero, salvo los topes de
+seguridad; al pasar a uno de esos modos, `fetch-code --full` completa lo que faltaba.
+
 Reparto: **el script** hace lo mecánico (normalizar URLs, descargar `llms.txt`, el sitemap y las
 páginas, consultar npm, PyPI y la API de GitHub, descargar y extraer el tarball, buscar, comprobar
 citas y escribir los `.md`), con `urllib`, para que funcione igual en cualquier agente. **La IA**
@@ -285,7 +306,9 @@ decide qué leer, lee, entiende, escribe y enseña.
 Fases:
 1. **Identificar:** web, documentación, repositorio, paquete (npm o PyPI), última versión y
    licencia comprobada (en el registro y en el archivo `LICENSE`; si no coinciden, se apunta), y
-   «qué hace en una línea».
+   «qué hace en una línea». De npm se pide solo la última versión (`<paquete>/latest`): el
+   documento completo de un paquete popular pasa de 5 MB. Si GitHub responde la licencia
+   `NOASSERTION`, cuenta como desconocida, no como distinta (revisión de la fase 1).
 2. **Documentación:** buscar `llms.txt`, el sitemap o el índice de la documentación y descargar las
    páginas. Si existe la variante `.md` de cada página, se usa; si una variante `.md` devuelve HTML,
    se ignora. Las páginas HTML se guardan convertidas a Markdown sencillo, con su URL de origen.
@@ -355,7 +378,8 @@ persona se guardan en el avance y se usan como pistas para el examen.
   las genera la IA. Antes de hacerlas, `exam-check` valida la forma (cantidad, tipos, como máximo
   una «léelo tú»), las citas de cada respuesta de referencia y la repetición: una pregunta cuenta
   como repetida si su texto normalizado coincide con una anterior del tema o si se parece en un 80 %
-  o más (Jaccard de palabras). También rechaza la misma mezcla de tipos que el intento anterior. La
+  o más (Jaccard de palabras, contando solo las de 3 letras o más; revisión de la fase 1, aceptado
+  por la persona). También rechaza la misma mezcla de tipos que el intento anterior. La
   IA regenera lo rechazado. Las referencias validadas, con sus fragmentos, son lo que recibe el
   corrector. Se priorizan las dudas de la lección y lo
   que falló antes **(propuesta aceptada)**. De 5 a 8 preguntas **(propuesta aceptada)**.
@@ -380,6 +404,10 @@ la persona pregunta hasta saber si le sirve.
 
 - **Identificar:** igual que en §7.1 (web, repositorio, paquete, versión, licencia comprobada y qué
   hace en una línea), más la actividad: fecha de la última release y del último commit.
+  **(decisión del diseño, comprobado el 2026-10-29)** La fecha de la release es la del tag exacto
+  del paquete (`releases/tags/<tag>`; si no hay release, la fecha del commit del tag), porque en un
+  monorepo la «última release» de GitHub puede ser de otro paquete (en `vercel/ai` salía
+  `@ai-sdk/zai`).
 - **Documentación:** solo las páginas de entrada: introducción, primeros pasos, instalación,
   conceptos y comparativas, si las hay. El resto queda declarado en la cobertura como no descargado.
 - **Código:** README, ejemplos, qué expone el paquete y el manifiesto (`package.json` o
@@ -389,6 +417,11 @@ la persona pregunta hasta saber si le sirve.
   palabras clave y temas, y de la búsqueda web del agente si la tiene. Cada uno se investiga en
   ligero: URL, repositorio, licencia comprobada, última versión, actividad, qué hace en una línea y
   su README. Ningún competidor sale de memoria: si no se pudo comprobar, no aparece.
+- **(decisión del diseño, comprobado el 2026-10-29)** Solo npm tiene buscador por programa
+  (`/-/v1/search`). PyPI lo retiró y solo se busca desde el navegador, así que en Python los
+  candidatos salen de la documentación, del README y de la búsqueda web del agente. Un competidor
+  necesita repositorio en GitHub para comprobarse; sin él, no aparece. La licencia, la versión y la
+  actividad de la tabla las pone el script con lo que descargó, no la IA.
 
 ### 8.2 Informe
 
@@ -548,7 +581,13 @@ El script es el único que escribe en `~/.teach-me/`. La IA no crea archivos por
 **Fase 2:** los modos 1 («Saber qué es»: informe y competidores, `search-packages`,
 `save-overview`), 2 (recorrido de §8.4) y 4 (segunda parte del temario), y los cambios de modo
 (§8.3). La fase 1 ya guarda en la ficha el modo y las piezas completadas, para que la fase 2 no
-tenga que migrar expedientes.
+tenga que migrar expedientes. Sin embeddings **(persona, 2026-10-29)**.
+
+**Estado (2026-10-29):** la fase 1 está entregada e integrada en `main` (PR #3). La fase 2 tiene su
+plan en `docs/superpowers/plans/2026-10-29-teach-me-phase-2.md`.
+
+**Fase posterior:** embeddings obligatorios con el modelo en `.env` y SQLite (§2), y una búsqueda
+que no ponga el código por delante de la documentación.
 
 ## 14. Lo que queda al constructor
 

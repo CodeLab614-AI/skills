@@ -15,7 +15,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import frontmatter, names as names_mod, store, urls
+from . import frontmatter, modes, names as names_mod, store, urls
 from .errors import BlockedError
 
 MODES = ("overview", "overview-internals", "use", "use-internals")
@@ -33,9 +33,9 @@ _STATUS_LABELS = {
 }
 _BODY_LABELS = {
     "es": {"summary": "Resumen", "roots": "Raíces (URLs)", "mode": "Modo", "status": "Estado",
-           "version": "Versión", "license": "Licencia", "links": "Enlaces", "none": "(sin datos)"},
+           "version": "Versión", "license": "Licencia", "parts": "Piezas", "links": "Enlaces", "none": "(sin datos)"},
     "en": {"summary": "Summary", "roots": "Roots (URLs)", "mode": "Mode", "status": "Status",
-           "version": "Version", "license": "License", "links": "Links", "none": "(no data)"},
+           "version": "Version", "license": "License", "parts": "Pieces", "links": "Links", "none": "(no data)"},
 }
 
 
@@ -110,6 +110,7 @@ def _profile_body(meta: dict) -> str:
     if meta.get("one_liner"):
         lines += [str(meta["one_liner"]), ""]
     lines.append("- **%s:** %s" % (lab("mode"), _label(_MODE_LABELS, lang, meta.get("mode", "use"))))
+    lines.append("- **%s:** %s" % (lab("parts"), ", ".join(modes.parts_for(meta.get("mode", "use")))))
     lines.append("- **%s:** %s" % (lab("status"), _label(_STATUS_LABELS, lang, meta.get("status", ""))))
     lines.append("- **%s:** %s" % (lab("version"), _version_text(meta.get("version")) or lab("none")))
     lic = meta.get("license")
@@ -197,7 +198,8 @@ def lookup(url: str) -> dict:
 
 def list_all() -> list:
     return [{"id": m.get("id"), "name": m.get("name"), "roots": m.get("roots", []),
-             "mode": m.get("mode"), "version": m.get("version"), "status": m.get("status")}
+             "mode": m.get("mode"), "version": m.get("version"), "status": m.get("status"),
+             "parts_done": modes._done(m), "missing_parts": modes.missing_parts(m)}
             for m in find_all()]
 
 
@@ -237,14 +239,14 @@ def _free_id(base: str) -> str:
 def _existing_info(meta: dict, created: bool) -> dict:
     return {"ok": True, "created": created, "id": meta["id"], "name": meta.get("name"),
             "lang": meta.get("lang"), "mode": meta.get("mode"), "status": meta.get("status"),
+            "parts_done": modes._done(meta), "missing_parts": modes.missing_parts(meta),
             "names": meta.get("names"), "roots": meta.get("roots", []),
             "path": str(store.dossier_dir(meta["id"]))}
 
 
 def init(url: str, lang: str, mode: str, custom_names: "dict | None") -> dict:
-    if mode != "use":
-        raise BlockedError("mode_not_available",
-                           "Mode %r is not available yet; only 'use' is." % mode)
+    if mode not in MODES:
+        raise BlockedError("bad_input", "Unknown mode %r. Allowed: %s." % (mode, ", ".join(MODES)))
     if not isinstance(lang, str) or not lang.strip():
         raise BlockedError("bad_input", "A language code is required.")
     lang = lang.strip()
@@ -267,7 +269,7 @@ def init(url: str, lang: str, mode: str, custom_names: "dict | None") -> dict:
             (sources / sub).mkdir(parents=True, exist_ok=True)
         meta = {
             "teach_me": "profile", "id": dossier_id, "lang": lang, "names": resolved,
-            "mode": "use", "parts_done": [], "public_code": None, "status": "investigating",
+            "mode": mode, "parts_done": [], "public_code": None, "status": "investigating",
             "phases": {}, "roots": [root], "input_url": url.strip(),
             "name": raw if " " not in raw else dossier_id,
             "one_liner": "", "links": {}, "license": {}, "version": {},

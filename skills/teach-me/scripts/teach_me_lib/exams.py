@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from . import dossier, frontmatter, progress, sources, store
+from . import dossier, frontmatter, modes, progress, sources, store
 from .errors import BlockedError
 
 TYPES = ("multiple_choice", "open", "predict", "when_to_use", "read_yourself")
@@ -138,7 +138,7 @@ def check(dossier_id: str, slug: str, questions) -> dict:
     dossier.require(dossier_id)
     folder = store.dossier_dir(dossier_id)
     meta, _ = dossier.load(dossier_id)
-    _entry(_syllabus(folder, meta), slug)
+    modes.require_in_mode(meta, _entry(_syllabus(folder, meta), slug))
     _validate_exam_shape(questions)
     previous = progress.asked(dossier_id, slug)
     repeated = []
@@ -287,6 +287,7 @@ def save(dossier_id: str, data) -> dict:
     with store.locked(dossier_id) as folder:
         meta, _ = dossier.load(dossier_id)
         entry = _entry(_syllabus(folder, meta), data["slug"])
+        modes.require_in_mode(meta, entry)
         resolved = _verify_references(dossier_id, questions)
         graded, average = _grade(questions, resolved)
         passed = average > 50

@@ -167,6 +167,114 @@ class MetaTests(unittest.TestCase):
             self.assertEqual((code, out["error"]["code"]), (2, "bad_input"))
 
 
+def head_commit(date="2026-10-28T08:00:00Z"):
+    return js({"sha": "deadbeef", "commit": {"committer": {"date": date}}})
+
+
+class ActivityTests(unittest.TestCase):
+    def routes(self, **extra):
+        routes = gh_routes(tags=["ai@7.0.155"])
+        routes["/repos/vercel/ai/commits/main"] = head_commit()
+        routes["/ai/latest"] = npm_doc()
+        routes.update(extra)
+        return routes
+
+    def test_activity_uses_the_release_of_the_exact_tag(self):
+        routes = self.routes(**{
+            "/repos/vercel/ai/releases/tags/ai@7.0.155": js({"published_at": "2026-10-29T10:00:00Z"}),
+            "/repos/vercel/ai/releases/latest": js({"published_at": "2020-01-01T00:00:00Z"})})
+        with FixtureServer(routes) as srv, TempHome():
+            setup(srv)
+            code, out = fetch(srv)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(out["activity"]["last_release_at"], "2026-10-29T10:00:00Z")
+            self.assertEqual(out["activity"]["release_source"], "release")
+            meta, _ = dossier.load("ai")
+            self.assertEqual(meta["activity"], out["activity"])
+            paths = [r["path"] for r in srv.requests]
+            self.assertNotIn("/repos/vercel/ai/releases/latest", paths)
+
+    def test_activity_falls_back_to_the_tag_commit_date(self):
+        routes = self.routes(**{
+            "/repos/vercel/ai/git/ref/tags/ai@7.0.155": js(
+                {"object": {"type": "commit", "sha": "c0ffee"}}),
+            "/repos/vercel/ai/commits/c0ffee": head_commit("2026-09-01T00:00:00Z")})
+        with FixtureServer(routes) as srv, TempHome():
+            setup(srv)
+            code, out = fetch(srv)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(out["activity"]["last_release_at"], "2026-09-01T00:00:00Z")
+            self.assertEqual(out["activity"]["release_source"], "tag_commit")
+
+    def test_annotated_tag_is_followed_to_its_commit(self):
+        routes = self.routes(**{
+            "/repos/vercel/ai/git/ref/tags/ai@7.0.155": js(
+                {"object": {"type": "tag", "sha": "a1a1"}}),
+            "/repos/vercel/ai/git/tags/a1a1": js({"object": {"type": "commit", "sha": "c0ffee"}}),
+            "/repos/vercel/ai/commits/c0ffee": head_commit("2026-08-01T00:00:00Z")})
+        with FixtureServer(routes) as srv, TempHome():
+            setup(srv)
+            code, out = fetch(srv)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(out["activity"]["last_release_at"], "2026-08-01T00:00:00Z")
+            self.assertEqual(out["activity"]["release_source"], "tag_commit")
+
+    def test_no_release_and_no_commit_leaves_the_date_empty(self):
+        with FixtureServer(self.routes()) as srv, TempHome():
+            setup(srv)
+            code, out = fetch(srv)
+            self.assertEqual(code, 0, out)
+            self.assertIsNone(out["activity"]["last_release_at"])
+            self.assertIsNone(out["activity"]["release_source"])
+
+    def test_activity_without_tag_uses_latest_release(self):
+        routes = dict(gh_routes(), **{
+            "/repos/vercel/ai/commits/main": head_commit(),
+            "/repos/vercel/ai/releases/latest": js({"published_at": "2026-07-01T00:00:00Z"})})
+        with FixtureServer(routes) as srv, TempHome():
+            setup(srv)
+            code, out = run_script("fetch-meta", "ai", "--repo", "vercel/ai", env=srv.env())
+            self.assertEqual(code, 0, out)
+            self.assertEqual(out["activity"]["last_release_at"], "2026-07-01T00:00:00Z")
+            self.assertEqual(out["activity"]["release_source"], "latest_release")
+
+    def test_activity_last_commit_at_is_the_head_commit_date(self):
+        with FixtureServer(self.routes()) as srv, TempHome():
+            setup(srv)
+            code, out = fetch(srv)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(out["activity"]["last_commit_at"], "2026-10-28T08:00:00Z")
+
+    def test_release_date_quotes_the_tag(self):
+        from teach_me_lib import meta
+        import os
+        from unittest import mock
+        routes = {"/repos/o/r/releases/tags/@s/p@1.0": js({"published_at": "2026-01-01T00:00:00Z"})}
+        with FixtureServer(routes) as srv:
+            with mock.patch.dict(os.environ, srv.env()):
+                self.assertEqual(meta.release_date("o/r", "@s/p@1.0"),
+                                 ("2026-01-01T00:00:00Z", "release"))
+                self.assertEqual(meta.release_date("o/r", None), (None, None))
+
+    def test_release_rate_limit_is_blocked(self):
+        routes = self.routes(**{
+            "/repos/vercel/ai/releases/tags/ai@7.0.155": (403, "text/plain", b"limit")})
+        with FixtureServer(routes) as srv, TempHome():
+            setup(srv)
+            code, out = fetch(srv)
+            self.assertEqual(code, 2)
+            self.assertEqual(out["error"]["code"], "github_rate_limited")
+
+    def test_no_repo_no_activity(self):
+        with FixtureServer({"/ai/latest": npm_doc()}) as srv, TempHome():
+            setup(srv)
+            code, out = run_script("fetch-meta", "ai", "--npm", "ai", env=srv.env())
+            self.assertEqual(code, 0, out)
+            self.assertNotIn("activity", out)
+            meta, _ = dossier.load("ai")
+            self.assertNotIn("activity", meta)
+
+
 class UpdateProfileTests(unittest.TestCase):
     def update(self, patch):
         return run_script("update-profile", "ai", stdin=json.dumps(patch))
