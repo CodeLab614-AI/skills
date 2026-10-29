@@ -11,11 +11,11 @@ _LABELS = {
     "es": {"title": "Avance", "number": "N.º", "topic": "Tema", "status": "Estado",
            "best": "Mejor nota", "attempts": "Intentos", "outdated": "Desactualizado",
            "yes": "sí", "no": "no", "pending": "Pendientes", "skipped": "Saltados",
-           "none": "(ninguno)"},
+           "none": "(ninguno)", "set_aside": "Apartados"},
     "en": {"title": "Progress", "number": "No.", "topic": "Topic", "status": "Status",
            "best": "Best score", "attempts": "Attempts", "outdated": "Outdated",
            "yes": "yes", "no": "no", "pending": "Pending", "skipped": "Skipped",
-           "none": "(none)"},
+           "none": "(none)", "set_aside": "Set aside"},
 }
 _NEEDS_REVIEW_STATUSES = ("passed", "pending")
 MAX_DOUBT = 500
@@ -83,9 +83,15 @@ def _status(head: dict, slug: str) -> str:
     return (head["topics"].get(slug) or {}).get("status") or "not_started"
 
 
+def _split(meta: dict, syl: list) -> "tuple[list, list]":
+    """(topics of the current mode, topics set aside), each in syllabus order."""
+    aside = [t for t in syl if modes.is_set_aside(meta, t)]
+    return [t for t in syl if t not in aside], aside
+
+
 def _body(folder: Path, meta: dict, head: dict) -> str:
     lab = _LABELS.get(meta.get("lang"), _LABELS["en"])
-    syl = _syllabus(folder, meta)
+    syl, aside = _split(meta, _syllabus(folder, meta))
     rows = [(t.get("number", "-"), t.get("slug"), t.get("title", t.get("slug"))) for t in syl]
     lines = ["# %s" % lab["title"], "",
              "| %s | %s | %s | %s | %s | %s |" % (lab["number"], lab["topic"], lab["status"],
@@ -101,6 +107,10 @@ def _body(folder: Path, meta: dict, head: dict) -> str:
         lines += ["", "## %s" % lab[key], ""]
         lines += ["- %s" % title for _n, slug, title in rows if _status(head, slug) == key] \
             or [lab["none"]]
+    if aside:
+        lines += ["", "## %s" % lab["set_aside"], ""]
+        lines += ["- %s. %s" % (t.get("number", "-"), t.get("title", t.get("slug")))
+                  for t in aside]
     return "\n".join(lines) + "\n"
 
 
@@ -163,12 +173,15 @@ def _needs_review(head: dict, topics: list, today_: str) -> bool:
     return any(_status(head, t.get("slug")) in _NEEDS_REVIEW_STATUSES for t in topics)
 
 
-def _view(head: dict, syl: list) -> list:
+def _view(head: dict, syl: list, meta: dict) -> list:
+    """Rows for the topics of the current mode; set-aside topics are left out."""
+    active, _ = _split(meta, syl)
+    live = {t.get("slug") for t in active}
     out = []
-    for t in syl:
+    for t in active:
         slug = t.get("slug")
         deps = [d for d in (t.get("depends_on") or [])
-                if _status(head, d) in ("pending", "skipped")]
+                if d in live and _status(head, d) in ("pending", "skipped")]
         entry_ = head["topics"].get(slug) or {}
         out.append({"number": t.get("number"), "slug": slug, "title": t.get("title", slug),
                     "status": _status(head, slug), "best": entry_.get("best"),
@@ -177,12 +190,14 @@ def _view(head: dict, syl: list) -> list:
 
 
 def _payload(meta: dict, head: dict, syl: list, today_: str) -> dict:
-    view = _view(head, syl)
+    view = _view(head, syl, meta)
+    active, aside = _split(meta, syl)
     return {"ok": True, "mode": meta.get("mode"), "current": head.get("current"),
             "topics": view,
             "pending": [t["slug"] for t in view if t["status"] == "pending"],
             "skipped": [t["slug"] for t in view if t["status"] == "skipped"],
-            "needs_review": _needs_review(head, syl, today_)}
+            "set_aside": [t.get("slug") for t in aside],
+            "needs_review": _needs_review(head, active, today_)}
 
 
 def show(dossier_id: str, today: "str | None" = None) -> dict:
@@ -217,7 +232,7 @@ def start(dossier_id: str, slug: str) -> dict:
         if t["status"] in ("not_started", "skipped"):
             t["status"] = "in_progress"
         head["current"] = slug
-        row = next(r for r in _view(head, syl) if r["slug"] == slug)
+        row = next(r for r in _view(head, syl, meta) if r["slug"] == slug)
         return dict({"ok": True}, **row)
     return _mutate(dossier_id, slug, fn, in_mode=True)
 
@@ -258,7 +273,7 @@ def touch(dossier_id: str, today: "str | None" = None) -> dict:
 
     def fn(head, syl, meta):
         previous = head.get("last_session")
-        needs = _needs_review(head, syl, day)
+        needs = _needs_review(head, _split(meta, syl)[0], day)
         head["last_session"] = day
         return {"ok": True, "needs_review": needs, "previous_session": previous}
     return _mutate(dossier_id, None, fn)
