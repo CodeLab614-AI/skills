@@ -41,14 +41,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _check_claims_shape(claims, tag: str, kinds=("fact", "pedagogical")) -> None:
-    if not isinstance(claims, list) or not claims:
-        raise _bad("%s needs at least one claim." % tag)
-    for j, claim in enumerate(claims):
-        if not isinstance(claim, dict) or claim.get("kind") not in kinds:
-            raise _bad("%s, claim %d: needs kind %s." % (tag, j, " or ".join(kinds)))
-
-
 def _validate(data) -> "tuple[list, list]":
     """Return (section blocks, competitor row blocks) after checking the payload shape."""
     if not isinstance(data, dict) or not isinstance(data.get("sections"), list):
@@ -59,7 +51,7 @@ def _validate(data) -> "tuple[list, list]":
         raise _bad("sections must be exactly, in order: %s." % ", ".join(SECTIONS))
     blocks, rows = [], []
     for sec in sections[:-1]:
-        _check_claims_shape(sec.get("claims"), "section %r" % sec["kind"])
+        support.check_claims_shape(sec.get("claims"), "section %r" % sec["kind"])
         if "code" in sec and not isinstance(sec["code"], str):
             raise _bad("section %r: code must be a string." % sec["kind"])
         blocks.append(sec)
@@ -72,7 +64,7 @@ def _validate(data) -> "tuple[list, list]":
                 or not item["competitor"].strip():
             raise _bad("%s needs a competitor (owner/name)." % tag)
         pair = [item.get("one_liner"), item.get("difference")]
-        _check_claims_shape(pair, tag, ("fact",))
+        support.check_claims_shape(pair, tag, ("fact",))
         rows.append({"kind": tag, "claims": pair})
     return blocks, rows
 

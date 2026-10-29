@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from teach_me_lib import code, competitors, config, docs, dossier, exams, meta, modes, overview, progress, search, sources, store, topics, update  # noqa: E402
+from teach_me_lib import built, code, competitors, config, docs, dossier, exams, meta, modes, overview, progress, search, sources, store, topics, update  # noqa: E402
 from teach_me_lib.errors import BlockedError  # noqa: E402
 
 # name -> (configure(subparser), handler(args) -> dict). Later tasks add entries.
@@ -149,6 +149,10 @@ def _cmd_save_overview(args) -> dict:
     return overview.save_overview(args.id, _read_stdin_json())
 
 
+def _cmd_save_built(args) -> dict:
+    return built.save_built(args.id, _read_stdin_json())
+
+
 def _cmd_show_part(args) -> dict:
     return overview.show_part(args.id, args.part)
 
@@ -264,6 +268,7 @@ def _register() -> None:
     COMMANDS["save-topic"] = (lambda p: p.add_argument("id"), _cmd_save_topic)
     COMMANDS["show-topic"] = (cfg_show_topic, _cmd_show_topic)
     COMMANDS["save-overview"] = (lambda p: p.add_argument("id"), _cmd_save_overview)
+    COMMANDS["save-built"] = (lambda p: p.add_argument("id"), _cmd_save_built)
     COMMANDS["show-part"] = (lambda p: (p.add_argument("id"), p.add_argument("part")), _cmd_show_part)
     COMMANDS["config"] = (lambda p: p.add_argument("--agent"), _cmd_config)
     COMMANDS["search"] = (cfg_search, _cmd_search)

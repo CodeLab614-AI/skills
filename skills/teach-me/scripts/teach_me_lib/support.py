@@ -11,6 +11,14 @@ from . import sources
 from .errors import BlockedError
 
 
+def check_claims_shape(claims, tag: str, kinds=("fact", "pedagogical")) -> None:
+    if not isinstance(claims, list) or not claims:
+        raise BlockedError("bad_input", "%s needs at least one claim." % tag)
+    for j, claim in enumerate(claims):
+        if not isinstance(claim, dict) or claim.get("kind") not in kinds:
+            raise BlockedError("bad_input", "%s, claim %d: needs kind %s." % (tag, j, " or ".join(kinds)))
+
+
 def check_blocks(data: dict, blocks: list) -> None:
     if data.get("support_checked_in") not in ("subagent", "same_conversation"):
         raise BlockedError("support_not_checked",
