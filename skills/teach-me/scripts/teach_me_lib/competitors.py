@@ -4,8 +4,10 @@ from __future__ import annotations
 import hashlib
 from urllib.parse import quote, urlsplit
 
-from . import dossier, meta, net, store, urls
+from . import dossier, docs, meta, net, store, urls
 from .errors import BlockedError
+
+README_LIMIT = 1024 * 1024
 
 PYPI_NO_SEARCH = ("PyPI has no search API; find candidates in the docs, the README or with the "
                   "agent's web search.")
@@ -63,3 +65,85 @@ def search_packages(dossier_id: str, registry: str, text: str, size: int = 10) -
         meta_dir.mkdir(parents=True, exist_ok=True)
         store.atomic_write(meta_dir / ("search-npm-%s.md" % digest), meta._meta_markdown(final, raw))
     return {"ok": True, "registry": "npm", "results": results}
+
+
+def fetch_competitor(dossier_id: str, repo: str, npm: "str | None", pypi: "str | None") -> dict:
+    """Verify one competitor from real data and keep its README as a citable page."""
+    if npm and pypi:
+        raise BlockedError("bad_input", "Give --npm or --pypi, not both.")
+    slug = meta._repo_slug(repo)
+    dossier.require(dossier_id)
+
+    api = net.base("github_api")
+    notices: list = []
+    files: dict = {}
+    pkg = None
+    if npm or pypi:
+        pkg, md_name, text, final = meta.registry_package("npm" if npm else "pypi", npm or pypi)
+        files[md_name] = meta._meta_markdown(final, text)
+
+    data, text, final = meta._get_json("%s/repos/%s" % (api, slug), "GitHub repository %s" % slug)
+    files["github.md"] = meta._meta_markdown(final, text)
+    last_commit_at = None
+    branch = data.get("default_branch")
+    if branch:
+        cdata, ctext, cfinal = meta._get_json(
+            "%s/repos/%s/commits/%s" % (api, slug, quote(branch, safe="/")),
+            "the head commit of %s" % slug)
+        last_commit_at = ((cdata.get("commit") or {}).get("committer") or {}).get("date")
+        files["github-commit.md"] = meta._meta_markdown(cfinal, ctext)
+    full_name = data.get("full_name") or slug
+
+    lic_pkg = pkg["license"] if pkg else None
+    lic_repo = meta._repo_license(data)
+    match = meta._same_license(lic_pkg, lic_repo)
+    if match is False:
+        notices.append("license_mismatch")
+
+    tag = meta.find_tag(slug, pkg["name"], pkg["latest"]) if pkg else None
+    released_at, source = meta.release_date(slug, tag)
+
+    readme_url = None
+    readme_text = None
+    got = meta._get_json("%s/repos/%s/readme" % (api, slug), "the README of %s" % slug,
+                         missing_ok=True)
+    if got is not None:
+        readme_url = got[0].get("download_url") if isinstance(got[0], dict) else None
+        files["github-readme.md"] = meta._meta_markdown(got[2], got[1])
+    if readme_url:
+        resp = net.get(readme_url, README_LIMIT)
+        if resp.status == 200:
+            readme_text = docs._decode(resp.body, resp.content_type)
+        elif resp.status != 404:
+            raise BlockedError("fetch_failed", "The README of %s answered HTTP %d." % (slug, resp.status))
+    if readme_text is None:
+        readme_url = None
+        notices.append("no_readme")
+
+    entry = {
+        "repo": slug.lower(), "url": "https://github.com/%s" % full_name,
+        "package": {"registry": pkg["registry"], "name": pkg["name"]} if pkg else None,
+        "latest": pkg["latest"] if pkg else None,
+        "license": {"registry": lic_pkg, "repo": lic_repo, "match": match},
+        "activity": {"last_release_at": released_at, "release_source": source,
+                     "last_commit_at": last_commit_at},
+        "readme_url": readme_url, "fetched_at": meta._now(),
+    }
+
+    key = slug.lower()
+    prefix = "competitor-%s-" % key.replace("/", "__")
+    with store.locked(dossier_id) as folder:
+        profile, _ = dossier.load(dossier_id)
+        if readme_text is not None:
+            # the same URL form fetch-docs stores and sources._resolve_doc looks up (no .md suffix)
+            docs.store_page(dossier_id, docs.clean_url(readme_url) or readme_url, readme_text, "md")
+        meta_dir = folder / profile["names"]["sources_dir"] / profile["names"]["meta_dir"]
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        for name, body in files.items():
+            store.atomic_write(meta_dir / (prefix + name), body)
+        found = profile.get("competitors")
+        found = found if isinstance(found, dict) else {}
+        found[key] = entry
+        profile["competitors"] = found
+        dossier.save(dossier_id, profile)
+    return dict(entry, ok=True, notices=notices)

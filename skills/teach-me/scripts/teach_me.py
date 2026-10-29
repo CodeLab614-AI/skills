@@ -76,6 +76,10 @@ def _cmd_search_packages(args) -> dict:
     return competitors.search_packages(args.id, registry, text, args.size)
 
 
+def _cmd_fetch_competitor(args) -> dict:
+    return competitors.fetch_competitor(args.id, args.repo, args.npm, args.pypi)
+
+
 def _cmd_update_profile(args) -> dict:
     return dossier.update_profile(args.id, _read_stdin_json())
 
@@ -208,6 +212,12 @@ def _register() -> None:
         p.add_argument("--pypi")
         p.add_argument("--size", type=int, default=10)
 
+    def cfg_fetch_competitor(p):
+        p.add_argument("id")
+        p.add_argument("--repo", required=True)
+        p.add_argument("--npm")
+        p.add_argument("--pypi")
+
     def cfg_discover_docs(p):
         p.add_argument("id")
         p.add_argument("docs_url")
@@ -253,6 +263,7 @@ def _register() -> None:
     COMMANDS["fetch-docs"] = (cfg_fetch_docs, _cmd_fetch_docs)
     COMMANDS["fetch-meta"] = (cfg_fetch_meta, _cmd_fetch_meta)
     COMMANDS["search-packages"] = (cfg_search_packages, _cmd_search_packages)
+    COMMANDS["fetch-competitor"] = (cfg_fetch_competitor, _cmd_fetch_competitor)
     COMMANDS["update-profile"] = (lambda p: p.add_argument("id"), _cmd_update_profile)
     COMMANDS["init"] = (cfg_init, _cmd_init)
     COMMANDS["discard"] = (lambda p: p.add_argument("id"), _cmd_discard)

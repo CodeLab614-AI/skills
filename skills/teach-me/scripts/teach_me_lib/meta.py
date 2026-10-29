@@ -51,6 +51,12 @@ def _clean_license(value):
     return None
 
 
+def _repo_license(data):
+    """SPDX id of the GitHub repository licence; NOASSERTION (not recognised) is None."""
+    lic = _clean_license((data.get("license") or {}).get("spdx_id"))
+    return None if lic and lic.upper() == "NOASSERTION" else lic
+
+
 def _same_license(a, b):
     if not a or not b:
         return None
@@ -200,9 +206,7 @@ def fetch_meta(dossier_id: str, npm: "str | None", pypi: "str | None",
             head_sha = cdata.get("sha")
             last_commit_at = ((cdata.get("commit") or {}).get("committer") or {}).get("date")
             files["github-commit.md"] = _meta_markdown(cfinal, ctext)
-        repo_lic = _clean_license((data.get("license") or {}).get("spdx_id"))
-        if repo_lic and repo_lic.upper() == "NOASSERTION":
-            repo_lic = None  # GitHub did not recognise the licence: unknown, not different
+        repo_lic = _repo_license(data)  # NOASSERTION: GitHub did not recognise it, so unknown
         repo_info = {
             "full_name": data.get("full_name") or slug, "default_branch": branch,
             "size_kb": data.get("size"),
