@@ -86,13 +86,26 @@ class MetaTests(unittest.TestCase):
             self.assertEqual(meta["version"]["value"], "deadbeef")
 
     def test_license_mismatch_is_reported(self):
-        routes = dict(gh_routes(spdx="NOASSERTION"), **{"/ai/latest": npm_doc()})
+        routes = dict(gh_routes(spdx="MIT"), **{"/ai/latest": npm_doc()})
         with FixtureServer(routes) as srv, TempHome():
             setup(srv)
             code, out = fetch(srv)
             self.assertEqual(code, 0, out)
             self.assertIs(out["license"]["match"], False)
             self.assertIn("license_mismatch", out["notices"])
+
+    def test_noassertion_license_is_unknown(self):
+        routes = dict(gh_routes(spdx="NOASSERTION"), **{"/ai/latest": npm_doc()})
+        with FixtureServer(routes) as srv, TempHome():
+            setup(srv)
+            code, out = fetch(srv)
+            self.assertEqual(code, 0, out)
+            self.assertIsNone(out["repo"]["license_spdx"])
+            self.assertEqual(out["license"],
+                             {"registry": "Apache-2.0", "repo": None, "match": None})
+            self.assertNotIn("license_mismatch", out["notices"])
+            meta, _ = dossier.load("ai")
+            self.assertIsNone(meta["license"]["repo"])
 
     def test_find_tag_monorepo(self):
         from teach_me_lib import meta
