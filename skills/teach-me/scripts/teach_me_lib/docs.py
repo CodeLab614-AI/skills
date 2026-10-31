@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -100,8 +100,12 @@ def _llms_urls(text: str, base: str) -> list:
 
 
 def _sitemap_locs(text: str) -> "tuple[str, list]":
+    # DOCTYPE/ENTITY rejected first; expat >= 2.4.1 also limits entity expansion
+    upper = text.upper()
+    if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+        return "", []
     try:
-        root = ET.fromstring(text)
+        root = ET.fromstring(text)  # nosec B314
     except ET.ParseError:
         return "", []
     kind = root.tag.rsplit("}", 1)[-1]
@@ -181,7 +185,7 @@ def collect(docs_url: str) -> "tuple[str, list, str]":
     try:
         parser.feed(_decode(resp.body, resp.content_type))
         parser.close()
-    except Exception:
+    except Exception:  # nosec B110
         pass
     found = _in_scope([base] + [clean_url(h, resp.final_url or base) for h in parser.hrefs], docs_norm)
     return "links", found, _sha([("\n".join(sorted(found))).encode("utf-8")])

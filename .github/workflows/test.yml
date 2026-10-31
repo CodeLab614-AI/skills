@@ -46,3 +46,18 @@ jobs:
       - name: Fail if tests tried to reach the network
         shell: bash
         run: test ! -s "$SKILLS_OFFLINE_LOG" || { cat "$SKILLS_OFFLINE_LOG"; exit 1; }
+
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Bandit (hash-pinned)
+        run: python3 -m pip install --require-hashes --no-deps -r .github/ci-requirements.txt
+      - name: Run Bandit
+        run: bandit -r skills -q

@@ -73,6 +73,11 @@ class DiscoverTests(unittest.TestCase):
             self.assertEqual(out["method"], "sitemap")
             self.assertEqual(out["page_count"], 2)
 
+    def test_sitemap_with_doctype_is_ignored(self):
+        xml = ('<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]>'
+               '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>&a;</loc></url></urlset>')
+        self.assertEqual(docs._sitemap_locs(xml), ("", []))
+
     def test_links_fallback_only_same_prefix(self):
         html = ("<a href='/docs/a'>a</a><a href='/docs/b#frag'>b</a><a href='/blog/x'>x</a>"
                 "<a href='/docsx/y'>y</a><a href='mailto:a@b.c'>m</a><a href='/docs/a?q=1'>dup</a>"

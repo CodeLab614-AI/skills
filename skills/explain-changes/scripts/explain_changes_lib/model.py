@@ -18,7 +18,7 @@ def hunk_fingerprint(path: str, removed: List[str], added: List[str]) -> str:
     """sha1 of ``file \\0 -removed \\0 +added`` (shared contract)."""
     payload = (path + "\0" + "\n".join("-" + x for x in removed)
                + "\0" + "\n".join("+" + x for x in added))
-    return hashlib.sha1(payload.encode("utf-8", "surrogateescape")).hexdigest()
+    return hashlib.sha1(payload.encode("utf-8", "surrogateescape"), usedforsecurity=False).hexdigest()
 
 
 @dataclass
