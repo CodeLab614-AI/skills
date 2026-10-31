@@ -7,8 +7,8 @@ import subprocess
 import sys
 import unittest
 
-import helpers
-from helpers import RepoTestCase, run_script
+import explain_helpers
+from explain_helpers import RepoTestCase, run_script
 
 from explain_changes_lib import report
 from explain_changes_lib.state import load_state
@@ -143,7 +143,7 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(set(report.LABELS["en"]), set(report.LABELS["es"]))
 
     def test_label_keys_are_all_used_and_documented(self):
-        from helpers import ROOT
+        from explain_helpers import ROOT
         base = ROOT / "skills" / "explain-changes"
         lib = base / "scripts" / "explain_changes_lib"
         source = "".join((lib / name).read_text(encoding="utf-8")
@@ -290,7 +290,7 @@ class WriteReportTests(RepoTestCase):
         repo = self.feature()
         run_script(repo, "facts", "--from", "main")
         run_script(repo, "verify", stdin='{"points": []}')
-        proc = subprocess.Popen([sys.executable, str(helpers.SCRIPT), "report", "--lang", "es"],
+        proc = subprocess.Popen([sys.executable, str(explain_helpers.SCRIPT), "report", "--lang", "es"],
                                 cwd=repo.path, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:

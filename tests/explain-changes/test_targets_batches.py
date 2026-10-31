@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import RepoTestCase, run_script
 from explain_changes_lib.batches import make_batches
 from explain_changes_lib.model import BlockedError, FileChange, Hunk
 from explain_changes_lib.targets import glob_to_regex, load_targets

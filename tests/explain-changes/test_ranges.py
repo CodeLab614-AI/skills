@@ -6,7 +6,7 @@ import os
 import unittest
 from collections import Counter
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import RepoTestCase, run_script
 from explain_changes_lib import ranges
 from explain_changes_lib.model import Hunk
 

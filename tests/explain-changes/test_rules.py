@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import unittest
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import RepoTestCase, run_script
 
 from explain_changes_lib import rules
 

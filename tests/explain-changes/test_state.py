@@ -5,7 +5,7 @@ import json
 import re
 import unittest
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import RepoTestCase, run_script
 from explain_changes_lib import state
 from explain_changes_lib.facts import collect_facts
 from explain_changes_lib.model import Hunk

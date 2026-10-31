@@ -5,8 +5,8 @@ import os
 import unittest
 from unittest import mock
 
-import helpers  # noqa: F401
-from helpers import FixtureServer, TempHome, run_script
+import teach_helpers  # noqa: F401
+from teach_helpers import FixtureServer, TempHome, run_script
 from teach_me_lib import net
 from teach_me_lib.errors import BlockedError
 

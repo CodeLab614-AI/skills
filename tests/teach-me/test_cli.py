@@ -6,8 +6,8 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-import helpers  # noqa: F401  (sets sys.path)
-from helpers import run_script
+import teach_helpers  # noqa: F401  (sets sys.path)
+from teach_helpers import run_script
 import teach_me
 
 

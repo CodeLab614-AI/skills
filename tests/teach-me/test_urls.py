@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-import helpers  # noqa: F401  (sets sys.path)
+import teach_helpers  # noqa: F401  (sets sys.path)
 from teach_me_lib import urls
 from teach_me_lib.errors import BlockedError
 

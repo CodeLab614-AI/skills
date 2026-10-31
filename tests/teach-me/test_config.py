@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-import helpers  # noqa: F401
-from helpers import TempHome, run_script
+import teach_helpers  # noqa: F401
+from teach_helpers import TempHome, run_script
 from teach_me_lib import config, frontmatter, store
 from teach_me_lib.errors import BlockedError
 

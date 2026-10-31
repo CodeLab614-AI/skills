@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import unittest
 
-import helpers  # noqa: F401  (sets sys.path)
-from helpers import TempHome, run_script
+import teach_helpers  # noqa: F401  (sets sys.path)
+from teach_helpers import TempHome, run_script
 from teach_me_lib import dossier, frontmatter
 
 

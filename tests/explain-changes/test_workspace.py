@@ -3,8 +3,8 @@ from __future__ import annotations
 import subprocess
 import unittest
 
-import helpers
-from helpers import RepoTestCase
+import explain_helpers
+from explain_helpers import RepoTestCase
 from explain_changes_lib import workspace
 from explain_changes_lib.model import BlockedError
 

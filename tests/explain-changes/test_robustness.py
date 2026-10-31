@@ -9,7 +9,7 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import SCRIPT, RepoTestCase, run_script
+from explain_helpers import SCRIPT, RepoTestCase, run_script
 
 FACTS = ".explain-changes/run/facts.json"
 ASCII_ENV = {"PYTHONIOENCODING": "ascii", "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}

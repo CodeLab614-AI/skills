@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import RepoTestCase, run_script
 
 
 def _detect(repo, *extra, env=None):

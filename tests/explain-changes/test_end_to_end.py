@@ -5,7 +5,7 @@ import json
 import os
 import unittest
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import RepoTestCase, run_script
 
 
 NOLOCK = {"GIT_OPTIONAL_LOCKS": "0"}  # the test itself must not refresh the index

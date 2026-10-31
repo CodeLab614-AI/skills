@@ -4,7 +4,7 @@ import os
 import time
 import unittest
 
-from helpers import TempHome
+from teach_helpers import TempHome
 from teach_me_lib import store
 from teach_me_lib.errors import BlockedError
 

@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import helpers  # noqa: F401
-from helpers import FixtureServer, TempHome, run_script
+import teach_helpers  # noqa: F401
+from teach_helpers import FixtureServer, TempHome, run_script
 from teach_me_lib import dossier, frontmatter, net, store
 from teach_me_lib.errors import BlockedError
 

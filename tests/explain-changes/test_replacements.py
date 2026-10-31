@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import RepoTestCase, run_script
 from explain_changes_lib.model import Hunk
 from explain_changes_lib.replacements import find_repeated_replacements
 

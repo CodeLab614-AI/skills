@@ -6,8 +6,8 @@ import sys
 import unittest
 from unittest import mock
 
-import helpers
-from helpers import RepoTestCase, run_script
+import explain_helpers
+from explain_helpers import RepoTestCase, run_script
 from explain_changes_lib import gitcmd
 
 
@@ -41,7 +41,7 @@ class GitCmdTest(RepoTestCase):
 
     def test_cli_help_exits_zero(self):
         repo = self.make_repo()
-        proc = subprocess.run([sys.executable, str(helpers.SCRIPT), "--help"],
+        proc = subprocess.run([sys.executable, str(explain_helpers.SCRIPT), "--help"],
                               cwd=repo.path, capture_output=True)
         self.assertEqual(proc.returncode, 0)
         self.assertIn(b"usage", proc.stdout)
@@ -76,7 +76,7 @@ class GitCmdTest(RepoTestCase):
                 "from pathlib import Path; from explain_changes_lib import gitcmd; "
                 "gitcmd.run_git(Path(%r), ['hash-object', '--stdin']); "
                 "sys.stdout.write(sys.stdin.read())"
-                % (str(helpers.SCRIPTS), str(repo.path)))
+                % (str(explain_helpers.SCRIPTS), str(repo.path)))
         proc = subprocess.run([sys.executable, "-c", code], input=b"payload",
                               capture_output=True)
         self.assertEqual(proc.stdout, b"payload")

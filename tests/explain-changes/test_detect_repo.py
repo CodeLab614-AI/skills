@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import RepoTestCase, run_script
 
 
 def _clone(test: unittest.TestCase, src: Path, *extra: str) -> Path:

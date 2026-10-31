@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import unittest
 
-from helpers import RepoTestCase
+from explain_helpers import RepoTestCase
 
 from explain_changes_lib import diffparse
 

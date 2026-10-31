@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-import helpers  # noqa: F401
+import teach_helpers  # noqa: F401
 from teach_me_lib import html2md
 
 
