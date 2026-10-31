@@ -99,7 +99,7 @@ Convert `test_robustness.py`, `test_state.py`, `test_report_html.py`, `test_diff
 
 **Files:** create `tests/teach-me/conftest.py`. Convert `test_frontmatter.py`, `test_names.py`, `test_cli.py`, `test_html2md.py`, `test_urls.py`, `test_store.py`, `test_config.py`, `test_discard.py`, `test_skill_md.py`, `test_net.py`, `test_update.py`, `test_modes.py`, `test_search.py`, `test_built.py` and `test_sources.py`.
 
-- Interfaces (used by Tasks 6–7): in `conftest.py`, fixture `home` yields an active `TempHome` (TEACH_ME_HOME set, then restored), and fixture `fixture_server` yields a started `FixtureServer` and stops it at teardown. `TempHome`, `FixtureServer` and `run_script` stay in `teach_helpers.py`.
+- Interfaces (used by Tasks 6–7): in `conftest.py`, fixture `home` yields an active `TempHome` (TEACH_ME_HOME set, then restored), This fixture replaces the `setUp`/`addCleanup` uses of `TempHome`. `FixtureServer` gets different routes in each test, so it stays an inline `with FixtureServer(routes) as srv:` block, which is valid pytest style, and so do the existing inline `with TempHome() [as h]:` blocks. `TempHome`, `FixtureServer` and `run_script` stay in `teach_helpers.py`.
 - [ ] Convert, verify (the teach-me suite stays at 319), and commit: `git commit -m "test(teach-me): convert part A to pytest style"`
 
 ### Task 6: teach-me, part B (6 files)
