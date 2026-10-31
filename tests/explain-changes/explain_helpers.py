@@ -6,7 +6,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,13 +68,6 @@ class TempRepo:
 
     def cleanup(self) -> None:
         self._tmp.cleanup()
-
-
-class RepoTestCase(unittest.TestCase):
-    def make_repo(self, branch: str = "main") -> TempRepo:
-        repo = TempRepo().init(branch)
-        self.addCleanup(repo.cleanup)
-        return repo
 
 
 def run_script(repo, *args: str, stdin: str | None = None,
