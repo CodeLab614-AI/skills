@@ -67,7 +67,10 @@ class DocsTest(unittest.TestCase):
         for needle in ("--from-commit", "inclusive", "file mode", "PowerShell"):
             self.assertIn(needle, doc, needle)
         workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
-        self.assertRegex(workflow, r"(?m)^permissions:\n  contents: read$")
+        self.assertRegex(workflow, r"(?m)^permissions: \{\}$")
+        self.assertEqual(
+            len(re.findall(r"(?m)^    permissions:\n      contents: read$", workflow)), 2)
+        self.assertNotRegex(workflow, r":\s*write\b")
 
     def test_usage_doc_describes_the_two_minute_summary(self):
         doc = DOC.read_text(encoding="utf-8")
