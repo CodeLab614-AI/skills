@@ -6,8 +6,9 @@ import os
 import random
 import tarfile
 import tempfile
-import unittest
 from pathlib import Path
+
+import pytest
 
 import teach_helpers  # noqa: F401
 from teach_helpers import FixtureServer, TempHome, run_script
@@ -77,34 +78,34 @@ BASIC = [
 ]
 
 
-class ExtractTests(unittest.TestCase):
+class TestExtract:
     def test_extracts_and_strips_top_dir(self):
         routes = {"/acme/lib/tar.gz/v1.0.0": route(tarball(BASIC))}
         with FixtureServer(routes) as srv, TempHome() as home:
             did = setup(srv, {"kind": "package", "value": "1.0.0", "label": "lib_1.0.0"})
             code, out = fetch(srv, did)
-            self.assertEqual(code, 0, out)
+            assert code == 0, out
             dest = code_root(did) / "lib_1.0.0"
-            self.assertEqual(out["path"], str(dest))
-            self.assertEqual(out["files"], 2)
-            self.assertEqual((dest / "README.md").read_text(), "# Hi\n")
-            self.assertTrue((dest / "src" / "a.py").is_file())
-            self.assertFalse((dest / "top.txt").exists())
-            self.assertFalse((dest / "repo-x").exists())
-            self.assertEqual((dest / "README.md").stat().st_mode & 0o7000, 0)
-            self.assertFalse((code_root(did) / "lib_1.0.0.partial").exists())
-            self.assertEqual([p for p in home.path.rglob("*") if ".tmp-code" in p.name], [])
+            assert out["path"] == str(dest)
+            assert out["files"] == 2
+            assert (dest / "README.md").read_text() == "# Hi\n"
+            assert (dest / "src" / "a.py").is_file()
+            assert not (dest / "top.txt").exists()
+            assert not (dest / "repo-x").exists()
+            assert (dest / "README.md").stat().st_mode & 0o7000 == 0
+            assert not (code_root(did) / "lib_1.0.0.partial").exists()
+            assert [p for p in home.path.rglob("*") if ".tmp-code" in p.name] == []
             meta, _ = dossier.load(did)
-            self.assertIn("code", meta["phases"])
-            self.assertTrue(meta["public_code"])
+            assert "code" in meta["phases"]
+            assert meta["public_code"]
 
     def test_label_falls_back_to_ref(self):
         routes = {"/acme/lib/tar.gz/ai@7.0.155": route(tarball(BASIC))}
         with FixtureServer(routes) as srv, TempHome():
             did = setup(srv)
             code, out = fetch(srv, did, ref="ai@7.0.155")
-            self.assertEqual(code, 0, out)
-            self.assertTrue((code_root(did) / "ai_7.0.155" / "README.md").is_file())
+            assert code == 0, out
+            assert (code_root(did) / "ai_7.0.155" / "README.md").is_file()
 
     def test_label_used_is_stored_for_sources_and_search(self):
         from teach_me_lib import search, sources
@@ -112,35 +113,35 @@ class ExtractTests(unittest.TestCase):
         with FixtureServer(routes) as srv, TempHome():
             did = setup(srv)
             code, out = fetch(srv, did, ref="ai@7.0.155")
-            self.assertEqual(code, 0, out)
+            assert code == 0, out
             meta, _ = dossier.load(did)
-            self.assertEqual(meta["version"]["label"], "ai_7.0.155")
+            assert meta["version"]["label"] == "ai_7.0.155"
             claims = [{"text": "x", "kind": "fact", "sources": [
                 {"kind": "code", "path": "src/a.py", "line_start": 1, "line_end": 2}]}]
             resolved, unverified = sources.check_claims(did, claims)
-            self.assertEqual(unverified, [])
-            self.assertIn("x = 1", resolved[0]["sources"][0]["excerpt"])
+            assert unverified == []
+            assert "x = 1" in resolved[0]["sources"][0]["excerpt"]
             res = search.query(did, "x = 1")
-            self.assertTrue(any(r["citation"].get("kind") == "code" for r in res["results"]))
+            assert any(r["citation"].get("kind") == "code" for r in res["results"])
 
     def test_not_found_is_fetch_failed(self):
         with FixtureServer({}) as srv, TempHome():
             did = setup(srv)
             code, out = fetch(srv, did, ref="nope")
-            self.assertEqual(code, 2)
-            self.assertEqual(out["error"]["code"], "fetch_failed")
-            self.assertIn("nope", out["error"]["message"])
-            self.assertEqual(list(code_root(did).iterdir()), [])
+            assert code == 2
+            assert out["error"]["code"] == "fetch_failed"
+            assert "nope" in out["error"]["message"]
+            assert list(code_root(did).iterdir()) == []
 
     def test_not_a_tarball_is_fetch_failed(self):
         routes = {"/acme/lib/tar.gz/v1": route(b"definitely not gzip")}
         with FixtureServer(routes) as srv, TempHome() as home:
             did = setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 2)
-            self.assertEqual(out["error"]["code"], "fetch_failed")
-            self.assertEqual([p for p in home.path.rglob("*") if ".tmp-code" in p.name], [])
-            self.assertEqual(list(code_root(did).iterdir()), [])
+            assert code == 2
+            assert out["error"]["code"] == "fetch_failed"
+            assert [p for p in home.path.rglob("*") if ".tmp-code" in p.name] == []
+            assert list(code_root(did).iterdir()) == []
 
     def test_unsafe_entries_never_written(self):
         entries = [
@@ -165,24 +166,24 @@ class ExtractTests(unittest.TestCase):
                 with FixtureServer(routes) as srv:
                     did = setup(srv)
                     code, out = fetch(srv, did, ref="v1")
-                    self.assertEqual(code, 0, out)
-                    self.assertEqual(out["files"], 1)
+                    assert code == 0, out
+                    assert out["files"] == 1
                     names = [p.name for p in parent.rglob("*")]
                     for bad in ("evil.txt", "abs.txt", "l", "h", "pipe", "drive.txt"):
-                        self.assertNotIn(bad, names)
-                    self.assertFalse(any("slash" in n for n in names))
-                    self.assertFalse(os.path.lexists("/abs.txt"))
-                    self.assertFalse(any(p.is_symlink() for p in parent.rglob("*")))
+                        assert bad not in names
+                    assert not any("slash" in n for n in names)
+                    assert not os.path.lexists("/abs.txt")
+                    assert not any(p.is_symlink() for p in parent.rglob("*"))
                     meta, _ = dossier.load(did)
                     skipped = {e["path"]: e["reason"] for e in meta["coverage"]["skipped"]}
-                    self.assertEqual(skipped["repo-x/../../evil.txt"], "unsafe_path")
-                    self.assertEqual(skipped["/abs.txt"], "unsafe_path")
-                    self.assertEqual(skipped["repo-x/back\\slash.txt"], "unsafe_path")
-                    self.assertEqual(skipped["C:/drive.txt"], "unsafe_path")
-                    self.assertEqual(skipped["l"], "link")
-                    self.assertEqual(skipped["h"], "link")
-                    self.assertEqual(skipped["repo-x/pipe"], "unsafe_path")
-                    self.assertEqual(out["skipped_by_reason"], {"unsafe_path": 5, "link": 2})
+                    assert skipped["repo-x/../../evil.txt"] == "unsafe_path"
+                    assert skipped["/abs.txt"] == "unsafe_path"
+                    assert skipped["repo-x/back\\slash.txt"] == "unsafe_path"
+                    assert skipped["C:/drive.txt"] == "unsafe_path"
+                    assert skipped["l"] == "link"
+                    assert skipped["h"] == "link"
+                    assert skipped["repo-x/pipe"] == "unsafe_path"
+                    assert out["skipped_by_reason"] == {"unsafe_path": 5, "link": 2}
             finally:
                 if old is None:
                     os.environ.pop("TEACH_ME_HOME", None)
@@ -209,25 +210,25 @@ class ExtractTests(unittest.TestCase):
         with FixtureServer(routes) as srv, TempHome():
             did = setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual(out["skipped_by_reason"],
-                             {"binary": 1, "too_large": 1, "ignored_dir": 5})
+            assert code == 0, out
+            assert out["skipped_by_reason"] == \
+                             {"binary": 1, "too_large": 1, "ignored_dir": 5}
             dest = Path(out["path"])
-            self.assertTrue((dest / "keep.js").is_file())
-            self.assertTrue((dest / "exact.txt").is_file())
-            self.assertTrue((dest / "late_nul.bin").is_file())  # NUL beyond 8 KB
+            assert (dest / "keep.js").is_file()
+            assert (dest / "exact.txt").is_file()
+            assert (dest / "late_nul.bin").is_file()  # NUL beyond 8 KB
             for gone in ("img.png", "big.txt", "node_modules", "src/vendor", ".git", "dist"):
-                self.assertFalse((dest / gone).exists(), gone)
+                assert not (dest / gone).exists(), gone
             meta, _ = dossier.load(did)
             skipped = {e["path"]: e["reason"] for e in meta["coverage"]["skipped"]}
-            self.assertEqual(skipped["img.png"], "binary")
-            self.assertEqual(skipped["big.txt"], "too_large")
-            self.assertEqual(skipped["node_modules"], "ignored_dir")
-            self.assertEqual(skipped["src/vendor"], "ignored_dir")
-            self.assertEqual(skipped["build"], "ignored_dir")
+            assert skipped["img.png"] == "binary"
+            assert skipped["big.txt"] == "too_large"
+            assert skipped["node_modules"] == "ignored_dir"
+            assert skipped["src/vendor"] == "ignored_dir"
+            assert skipped["build"] == "ignored_dir"
             ignored = [e for e in meta["coverage"]["skipped"] if e["reason"] == "ignored_dir"]
-            self.assertEqual(len(ignored), 5)
-            self.assertNotIn("node_modules/p/i.js", skipped)
+            assert len(ignored) == 5
+            assert "node_modules/p/i.js" not in skipped
 
     def test_inventory_counts_lines(self):
         entries = [
@@ -240,28 +241,28 @@ class ExtractTests(unittest.TestCase):
         with FixtureServer(routes) as srv, TempHome():
             did = setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
+            assert code == 0, out
             head, body = frontmatter.parse((Path(out["path"]) / "_inventory.md").read_text(encoding="utf-8"))
-            self.assertEqual(head["teach_me"], "index")
-            self.assertEqual(head["files"], [
+            assert head["teach_me"] == "index"
+            assert head["files"] == [
                 {"path": "a.txt", "lines": 2}, {"path": "b.txt", "lines": 3},
-                {"path": "empty.txt", "lines": 0}])
-            self.assertIn("a.txt", body)
+                {"path": "empty.txt", "lines": 0}]
+            assert "a.txt" in body
 
     def test_second_fetch_does_not_download(self):
         routes = {"/acme/lib/tar.gz/v1": route(tarball(BASIC))}
         with FixtureServer(routes) as srv, TempHome():
             did = setup(srv)
             code, first = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, first)
+            assert code == 0, first
             count = len(srv.requests)
-            self.assertEqual(count, 1)
+            assert count == 1
             code, second = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, second)
-            self.assertEqual(len(srv.requests), count)
-            self.assertEqual(second["files"], first["files"])
-            self.assertEqual(second["path"], first["path"])
-            self.assertEqual(second["skipped_by_reason"], first["skipped_by_reason"])
+            assert code == 0, second
+            assert len(srv.requests) == count
+            assert second["files"] == first["files"]
+            assert second["path"] == first["path"]
+            assert second["skipped_by_reason"] == first["skipped_by_reason"]
 
     def test_stale_partial_is_replaced(self):
         routes = {"/acme/lib/tar.gz/v1": route(tarball(BASIC))}
@@ -271,9 +272,9 @@ class ExtractTests(unittest.TestCase):
             stale.mkdir()
             (stale / "junk.txt").write_text("junk")
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertFalse(stale.exists())
-            self.assertFalse((Path(out["path"]) / "junk.txt").exists())
+            assert code == 0, out
+            assert not stale.exists()
+            assert not (Path(out["path"]) / "junk.txt").exists()
 
 
 def set_package(did, registry, name):
@@ -323,7 +324,7 @@ def mono_setup(srv, entries=NPM_MONO, registry="npm", name="ai"):
     return did
 
 
-class MonorepoTests(unittest.TestCase):
+class TestMonorepo:
     def run_mono(self, entries=NPM_MONO, registry="npm", name="ai", ref="v1"):
         routes = {"/acme/lib/tar.gz/" + ref: route(tarball(entries))}
         srv = FixtureServer(routes)
@@ -337,34 +338,34 @@ class MonorepoTests(unittest.TestCase):
         with self.run_mono(entries) as srv, TempHome():
             did = mono_setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual(out["layout"], "single")
-            self.assertNotIn("package_dir", out)
-            self.assertNotIn("notices", out)
-            self.assertEqual(out["files"], 3)
-            self.assertNotIn("not_saved", out["skipped_by_reason"])
+            assert code == 0, out
+            assert out["layout"] == "single"
+            assert "package_dir" not in out
+            assert "notices" not in out
+            assert out["files"] == 3
+            assert "not_saved" not in out["skipped_by_reason"]
             head = head_of(out)
-            self.assertEqual((head["repo"], head["ref"], head["layout"]), ("acme/lib", "v1", "single"))
-            self.assertNotIn("package_dir", head)
+            assert (head["repo"], head["ref"], head["layout"]) == ("acme/lib", "v1", "single")
+            assert "package_dir" not in head
 
     def test_no_links_package_extracts_everything(self):
         with self.run_mono() as srv, TempHome():
             did = setup(srv, {"kind": "package", "value": "1.0.0", "label": "lib_1.0.0"})
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual(out["layout"], "single")
-            self.assertNotIn("notices", out)
-            self.assertTrue((Path(out["path"]) / "tsconfig.json").is_file())
-            self.assertTrue((Path(out["path"]) / "packages" / "openai" / "src" / "index.ts").is_file())
+            assert code == 0, out
+            assert out["layout"] == "single"
+            assert "notices" not in out
+            assert (Path(out["path"]) / "tsconfig.json").is_file()
+            assert (Path(out["path"]) / "packages" / "openai" / "src" / "index.ts").is_file()
 
     def test_package_without_manifest_adds_notice(self):
         with self.run_mono() as srv, TempHome():
             did = mono_setup(srv, name="nope")
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual(out["layout"], "single")
-            self.assertEqual(out["notices"], ["package_dir_not_found"])
-            self.assertTrue((Path(out["path"]) / "tsconfig.json").is_file())
+            assert code == 0, out
+            assert out["layout"] == "single"
+            assert out["notices"] == ["package_dir_not_found"]
+            assert (Path(out["path"]) / "tsconfig.json").is_file()
 
     def test_manifest_inside_examples_or_ignored_dirs_is_ignored(self):
         entries = [("r", "dir", None),
@@ -374,46 +375,46 @@ class MonorepoTests(unittest.TestCase):
         with self.run_mono(entries) as srv, TempHome():
             did = mono_setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual(out["notices"], ["package_dir_not_found"])
-            self.assertEqual(out["layout"], "single")
+            assert code == 0, out
+            assert out["notices"] == ["package_dir_not_found"]
+            assert out["layout"] == "single"
 
     def test_npm_monorepo_keeps_only_the_package(self):
         with self.run_mono() as srv, TempHome():
             did = mono_setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual((out["layout"], out["package_dir"]), ("monorepo", "packages/ai"))
+            assert code == 0, out
+            assert (out["layout"], out["package_dir"]) == ("monorepo", "packages/ai")
             dest = Path(out["path"])
             for kept in ("README.md", "LICENSE", "CHANGELOG.md", "package.json",
                          "packages/ai/package.json", "packages/ai/src/index.ts",
                          "examples/ai-core/src/a.ts", "examples/ai-core/src/b.ts",
                          "examples/ai-core/src/d.js", "examples/ai-core/src/e.js",
                          "examples/ai-core/src/g.ts"):
-                self.assertTrue((dest / kept).is_file(), kept)
+                assert (dest / kept).is_file(), kept
             for gone in ("tsconfig.json", "turbo.json", "packages/openai", "examples/next-openai",
                          "examples/ai-core/src/c.ts", "examples/ai-core/src/f.ts",
                          "examples/ai-core/src/sub", "packages/ai/node_modules"):
-                self.assertFalse((dest / gone).exists(), gone)
+                assert not (dest / gone).exists(), gone
             meta, _ = dossier.load(did)
-            self.assertEqual(not_saved(meta), [
+            assert not_saved(meta) == [
                 "examples/ai-core/src", "examples/ai-core/src/sub",
                 "examples/next-openai", "packages/openai",
-                "tsconfig.json", "turbo.json"])
-            self.assertEqual(out["skipped_by_reason"], {"not_saved": 6, "ignored_dir": 1})
+                "tsconfig.json", "turbo.json"]
+            assert out["skipped_by_reason"] == {"not_saved": 6, "ignored_dir": 1}
             ignored = [e["path"] for e in meta["coverage"]["skipped"] if e["reason"] == "ignored_dir"]
-            self.assertEqual(ignored, ["packages/ai/node_modules"])
+            assert ignored == ["packages/ai/node_modules"]
             head = head_of(out)
-            self.assertEqual((head["repo"], head["ref"], head["layout"], head["package_dir"]),
-                             ("acme/lib", "v1", "monorepo", "packages/ai"))
-            self.assertEqual(sorted(e["path"] for e in head["skipped"]), not_saved(meta))
-            self.assertTrue(all(e["reason"] == "not_saved" for e in head["skipped"]))
-            self.assertEqual(head["skipped_by_reason"], out["skipped_by_reason"])
+            assert (head["repo"], head["ref"], head["layout"], head["package_dir"]) == \
+                             ("acme/lib", "v1", "monorepo", "packages/ai")
+            assert sorted(e["path"] for e in head["skipped"]) == not_saved(meta)
+            assert all(e["reason"] == "not_saved" for e in head["skipped"])
+            assert head["skipped_by_reason"] == out["skipped_by_reason"]
             # resume keeps the new keys
             code, again = fetch(srv, did, ref="v1")
-            self.assertEqual(again["layout"], "monorepo")
-            self.assertEqual(again["package_dir"], "packages/ai")
-            self.assertEqual(len(srv.requests), 1)
+            assert again["layout"] == "monorepo"
+            assert again["package_dir"] == "packages/ai"
+            assert len(srv.requests) == 1
 
     def test_shallowest_manifest_wins(self):
         entries = [("r", "dir", None),
@@ -424,7 +425,7 @@ class MonorepoTests(unittest.TestCase):
         with self.run_mono(entries) as srv, TempHome():
             did = mono_setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(out["package_dir"], "a")
+            assert out["package_dir"] == "a"
 
     def test_examples_cap_is_first_by_path_regardless_of_tar_order(self):
         names = ["m/examples/e%03d.ts" % i for i in range(305)]
@@ -435,14 +436,14 @@ class MonorepoTests(unittest.TestCase):
         with self.run_mono(entries) as srv, TempHome():
             did = mono_setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
+            assert code == 0, out
             dest = Path(out["path"])
             saved = sorted(p.name for p in (dest / "examples").iterdir())
-            self.assertEqual(saved, ["e%03d.ts" % i for i in range(300)])
-            self.assertEqual(out["files"], 301)
+            assert saved == ["e%03d.ts" % i for i in range(300)]
+            assert out["files"] == 301
             meta, _ = dossier.load(did)
             # one entry per folder: examples
-            self.assertEqual(not_saved(meta), ["examples"])
+            assert not_saved(meta) == ["examples"]
 
     def _saved_examples(self, out):
         dest = Path(out["path"])
@@ -471,16 +472,16 @@ class MonorepoTests(unittest.TestCase):
                 if depth < len(groups[k]):
                     expected.append(sorted(groups[k])[depth])
         expected = sorted(expected[:300])
-        self.assertEqual(len(expected), 300)
+        assert len(expected) == 300
         with self.run_mono(self._example_entries(files, 11)) as srv, TempHome():
             did = mono_setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
+            assert code == 0, out
             saved = self._saved_examples(out)
-            self.assertEqual(len(saved), 300)
-            self.assertEqual(saved, expected)
+            assert len(saved) == 300
+            assert saved == expected
             for p in groups["c"] + groups[""]:
-                self.assertIn(p, saved)
+                assert p in saved
 
     def test_examples_same_set_in_two_tar_orders(self):
         files, _ = self._round_robin_files()
@@ -489,9 +490,9 @@ class MonorepoTests(unittest.TestCase):
             with self.run_mono(self._example_entries(files, seed)) as srv, TempHome():
                 did = mono_setup(srv)
                 code, out = fetch(srv, did, ref="v1")
-                self.assertEqual(code, 0, out)
+                assert code == 0, out
                 results.append(self._saved_examples(out))
-        self.assertEqual(results[0], results[1])
+        assert results[0] == results[1]
 
     def test_examples_fewer_than_cap_are_all_saved(self):
         files = [("examples/a/f%d.ts" % i, "import 'ai';\n") for i in range(40)]
@@ -500,8 +501,8 @@ class MonorepoTests(unittest.TestCase):
         with self.run_mono(self._example_entries(files, 3)) as srv, TempHome():
             did = mono_setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual(self._saved_examples(out), sorted(p for p, _ in files))
+            assert code == 0, out
+            assert self._saved_examples(out) == sorted(p for p, _ in files)
 
     def test_examples_not_importing_are_never_picked(self):
         files = [("examples/a/f%03d.ts" % i, "import 'ai';\n") for i in range(300)]
@@ -510,12 +511,12 @@ class MonorepoTests(unittest.TestCase):
         with self.run_mono(self._example_entries(files, 5)) as srv, TempHome():
             did = mono_setup(srv)
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
+            assert code == 0, out
             saved = self._saved_examples(out)
-            self.assertEqual(len(saved), 300)
-            self.assertNotIn("examples/b/nope.ts", saved)
-            self.assertNotIn("examples/z/nope.ts", saved)
-            self.assertEqual(sum(1 for p in saved if p.startswith("examples/b/")), 10)
+            assert len(saved) == 300
+            assert "examples/b/nope.ts" not in saved
+            assert "examples/z/nope.ts" not in saved
+            assert sum(1 for p in saved if p.startswith("examples/b/")) == 10
 
     def test_pypi_monorepo(self):
         entries = [
@@ -535,16 +536,16 @@ class MonorepoTests(unittest.TestCase):
         with self.run_mono(entries) as srv, TempHome():
             did = mono_setup(srv, registry="pypi", name="my-lib")
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual((out["layout"], out["package_dir"]), ("monorepo", "libs/my_lib"))
+            assert code == 0, out
+            assert (out["layout"], out["package_dir"]) == ("monorepo", "libs/my_lib")
             dest = Path(out["path"])
             for kept in ("README.md", "pyproject.toml", "libs/my_lib/my_lib/__init__.py",
                          "examples/a.py", "examples/b.py"):
-                self.assertTrue((dest / kept).is_file(), kept)
-            self.assertFalse((dest / "libs/other").exists())
-            self.assertFalse((dest / "examples/c.py").exists())
+                assert (dest / kept).is_file(), kept
+            assert not (dest / "libs/other").exists()
+            assert not (dest / "examples/c.py").exists()
             meta, _ = dossier.load(did)
-            self.assertEqual(not_saved(meta), ["examples", "libs/other"])
+            assert not_saved(meta) == ["examples", "libs/other"]
 
     def test_poetry_name_matches(self):
         entries = [("m", "dir", None),
@@ -553,15 +554,15 @@ class MonorepoTests(unittest.TestCase):
         with self.run_mono(entries) as srv, TempHome():
             did = mono_setup(srv, registry="pypi", name="A-B-C")
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(out["package_dir"], "sub")
-            self.assertFalse((Path(out["path"]) / "other.py").exists())
+            assert out["package_dir"] == "sub"
+            assert not (Path(out["path"]) / "other.py").exists()
 
 
-class FetchPathTests(unittest.TestCase):
+class TestFetchPath:
     def fetched(self, srv, entries=NPM_MONO):
         did = mono_setup(srv)
         code, out = fetch(srv, did, ref="v1")
-        self.assertEqual(code, 0, out)
+        assert code == 0, out
         return did, out
 
     def test_path_adds_folder_and_updates_inventory_and_coverage(self):
@@ -569,62 +570,62 @@ class FetchPathTests(unittest.TestCase):
         entries = NPM_MONO + [("m/packages/openai/src/zzuniquemarker.ts", "file", "export const zzuniquemarker = 1;\n")]
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(entries))}) as srv, TempHome():
             did, out = self.fetched(srv, entries)
-            self.assertIn("packages/openai", not_saved(dossier.load(did)[0]))
+            assert "packages/openai" in not_saved(dossier.load(did)[0])
             code, res = run_script("fetch-code", did, "--path", "packages/openai", env=srv.env())
-            self.assertEqual(code, 0, res)
-            self.assertEqual(res["files"], 3)
-            self.assertEqual(res["saved_path"], "packages/openai")
-            self.assertEqual(res["path"], out["path"])
-            self.assertEqual(len(srv.requests), 2)
+            assert code == 0, res
+            assert res["files"] == 3
+            assert res["saved_path"] == "packages/openai"
+            assert res["path"] == out["path"]
+            assert len(srv.requests) == 2
             dest = Path(out["path"])
-            self.assertTrue((dest / "packages/openai/src/index.ts").is_file())
+            assert (dest / "packages/openai/src/index.ts").is_file()
             head = head_of(out)
             paths = [f["path"] for f in head["files"]]
-            self.assertEqual(paths, sorted(paths))
-            self.assertIn("packages/openai/src/index.ts", paths)
-            self.assertIn("packages/ai/src/index.ts", paths)
-            self.assertNotIn("packages/openai", [e["path"] for e in head["skipped"]])
-            self.assertEqual(head["skipped_by_reason"]["not_saved"], 5)
-            self.assertEqual(res["skipped_by_reason"], head["skipped_by_reason"])
-            self.assertEqual((head["repo"], head["ref"], head["layout"], head["package_dir"]),
-                             ("acme/lib", "v1", "monorepo", "packages/ai"))
-            self.assertNotIn("packages/openai", not_saved(dossier.load(did)[0]))
-            self.assertIn("tsconfig.json", not_saved(dossier.load(did)[0]))
+            assert paths == sorted(paths)
+            assert "packages/openai/src/index.ts" in paths
+            assert "packages/ai/src/index.ts" in paths
+            assert "packages/openai" not in [e["path"] for e in head["skipped"]]
+            assert head["skipped_by_reason"]["not_saved"] == 5
+            assert res["skipped_by_reason"] == head["skipped_by_reason"]
+            assert (head["repo"], head["ref"], head["layout"], head["package_dir"]) == \
+                             ("acme/lib", "v1", "monorepo", "packages/ai")
+            assert "packages/openai" not in not_saved(dossier.load(did)[0])
+            assert "tsconfig.json" in not_saved(dossier.load(did)[0])
             found = search.query(did, "zzuniquemarker")
-            self.assertTrue(any(r["citation"].get("path") == "packages/openai/src/zzuniquemarker.ts"
-                                for r in found["results"]))
+            assert any(r["citation"].get("path") == "packages/openai/src/zzuniquemarker.ts"
+                                for r in found["results"])
             # a second call adds nothing new and leaves files alone
             code, again = run_script("fetch-code", did, "--path", "packages/openai", env=srv.env())
-            self.assertEqual(code, 0, again)
-            self.assertEqual(again["files"], 0)
+            assert code == 0, again
+            assert again["files"] == 0
 
     def test_single_file_inside_not_saved_folder_keeps_folder_entry(self):
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(NPM_MONO))}) as srv, TempHome():
             did, out = self.fetched(srv)
             code, res = run_script("fetch-code", did, "--path", "packages/openai/src/index.ts",
                                    env=srv.env())
-            self.assertEqual(code, 0, res)
-            self.assertEqual(res["files"], 1)
+            assert code == 0, res
+            assert res["files"] == 1
             dest = Path(out["path"])
-            self.assertTrue((dest / "packages/openai/src/index.ts").is_file())
-            self.assertFalse((dest / "packages/openai/package.json").exists())
-            self.assertIn("packages/openai", not_saved(dossier.load(did)[0]))
-            self.assertIn("packages/openai", [e["path"] for e in head_of(out)["skipped"]])
+            assert (dest / "packages/openai/src/index.ts").is_file()
+            assert not (dest / "packages/openai/package.json").exists()
+            assert "packages/openai" in not_saved(dossier.load(did)[0])
+            assert "packages/openai" in [e["path"] for e in head_of(out)["skipped"]]
 
     def test_root_file_entry_removed(self):
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(NPM_MONO))}) as srv, TempHome():
             did, out = self.fetched(srv)
             code, res = run_script("fetch-code", did, "--path", "tsconfig.json", env=srv.env())
-            self.assertEqual(code, 0, res)
-            self.assertNotIn("tsconfig.json", not_saved(dossier.load(did)[0]))
-            self.assertIn("turbo.json", not_saved(dossier.load(did)[0]))
+            assert code == 0, res
+            assert "tsconfig.json" not in not_saved(dossier.load(did)[0])
+            assert "turbo.json" in not_saved(dossier.load(did)[0])
 
     def test_path_not_found(self):
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(NPM_MONO))}) as srv, TempHome():
             did, out = self.fetched(srv)
             code, res = run_script("fetch-code", did, "--path", "packages/nothing", env=srv.env())
-            self.assertEqual(code, 2)
-            self.assertEqual(res["error"]["code"], "path_not_found")
+            assert code == 2
+            assert res["error"]["code"] == "path_not_found"
 
     def test_bad_paths(self):
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(NPM_MONO))}) as srv, TempHome():
@@ -632,26 +633,26 @@ class FetchPathTests(unittest.TestCase):
             n = len(srv.requests)
             for bad in ("../x", "/etc", "a\\b", "a/../b", "", "."):
                 code, res = run_script("fetch-code", did, "--path", bad, env=srv.env())
-                self.assertEqual(code, 2, bad)
-                self.assertEqual(res["error"]["code"], "bad_input", bad)
-            self.assertEqual(len(srv.requests), n)
+                assert code == 2, bad
+                assert res["error"]["code"] == "bad_input", bad
+            assert len(srv.requests) == n
 
     def test_without_repo_ref_and_without_path_is_bad_input(self):
         with FixtureServer({}) as srv, TempHome():
             did = setup(srv)
             code, res = run_script("fetch-code", did, env=srv.env())
-            self.assertEqual(code, 2)
-            self.assertEqual(res["error"]["code"], "bad_input")
+            assert code == 2
+            assert res["error"]["code"] == "bad_input"
             code, res = run_script("fetch-code", did, "--repo", "acme/lib", env=srv.env())
-            self.assertEqual(res["error"]["code"], "bad_input")
+            assert res["error"]["code"] == "bad_input"
 
     def test_path_without_inventory_repo_ref_is_bad_input_then_accepts_flags(self):
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(BASIC))}) as srv, TempHome():
             did = setup(srv, {"kind": "package", "value": "1.0.0", "label": "lib_1.0.0"})
             code, res = run_script("fetch-code", did, "--path", "src", env=srv.env())
-            self.assertEqual(code, 2)
-            self.assertEqual(res["error"]["code"], "bad_input")
-            self.assertIn("--repo", res["error"]["message"])
+            assert code == 2
+            assert res["error"]["code"] == "bad_input"
+            assert "--repo" in res["error"]["message"]
             # old inventory without repo/ref
             code, out = fetch(srv, did, ref="v1")
             inv = Path(out["path"]) / "_inventory.md"
@@ -660,12 +661,12 @@ class FetchPathTests(unittest.TestCase):
                 head.pop(k, None)
             inv.write_text(frontmatter.dump(head, body), encoding="utf-8")
             code, res = run_script("fetch-code", did, "--path", "src", env=srv.env())
-            self.assertEqual(res["error"]["code"], "bad_input")
+            assert res["error"]["code"] == "bad_input"
             code, res = run_script("fetch-code", did, "--path", "src", "--repo", "acme/lib",
                                    "--ref", "v1", env=srv.env())
-            self.assertEqual(code, 0, res)
-            self.assertEqual(res["files"], 0)
-            self.assertEqual(frontmatter.parse(inv.read_text(encoding="utf-8"))[0]["repo"], "acme/lib")
+            assert code == 0, res
+            assert res["files"] == 0
+            assert frontmatter.parse(inv.read_text(encoding="utf-8"))[0]["repo"] == "acme/lib"
 
     def test_path_without_any_inventory_is_bad_input(self):
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(BASIC))}) as srv, TempHome():
@@ -673,13 +674,13 @@ class FetchPathTests(unittest.TestCase):
             before = dossier.load(did)[0]
             code, res = run_script("fetch-code", did, "--path", "src", "--repo", "acme/lib",
                                    "--ref", "v1", env=srv.env())
-            self.assertEqual(code, 2)
-            self.assertEqual(res["error"]["code"], "bad_input")
-            self.assertIn("fetch-code", res["error"]["message"])
-            self.assertEqual(list(code_root(did).iterdir()), [])
+            assert code == 2
+            assert res["error"]["code"] == "bad_input"
+            assert "fetch-code" in res["error"]["message"]
+            assert list(code_root(did).iterdir()) == []
             after = dossier.load(did)[0]
-            self.assertEqual(after.get("phases"), before.get("phases"))
-            self.assertEqual(len(srv.requests), 0)
+            assert after.get("phases") == before.get("phases")
+            assert len(srv.requests) == 0
 
     def test_safety_holds_for_path(self):
         entries = NPM_MONO + [
@@ -692,18 +693,18 @@ class FetchPathTests(unittest.TestCase):
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(entries))}) as srv, TempHome() as home:
             did, out = self.fetched(srv, entries)
             code, res = run_script("fetch-code", did, "--path", "packages/openai", env=srv.env())
-            self.assertEqual(code, 0, res)
+            assert code == 0, res
             dest = Path(out["path"])
             for gone in ("link", "hard", "node_modules", "bin.dat"):
-                self.assertFalse((dest / "packages/openai" / gone).exists(), gone)
-            self.assertFalse((dest / "evil.txt").exists())
-            self.assertFalse(any(p.name == "evil.txt" for p in home.path.rglob("*")))
-            self.assertFalse(any(p.is_symlink() for p in home.path.rglob("*")))
+                assert not (dest / "packages/openai" / gone).exists(), gone
+            assert not (dest / "evil.txt").exists()
+            assert not any(p.name == "evil.txt" for p in home.path.rglob("*"))
+            assert not any(p.is_symlink() for p in home.path.rglob("*"))
             reasons = {e["path"]: e["reason"] for e in dossier.load(did)[0]["coverage"]["skipped"]
                        if e["reason"] != "not_saved"}
-            self.assertEqual(reasons["packages/openai/link"], "link")
-            self.assertEqual(reasons["packages/openai/bin.dat"], "binary")
-            self.assertEqual(reasons["packages/openai/node_modules"], "ignored_dir")
+            assert reasons["packages/openai/link"] == "link"
+            assert reasons["packages/openai/bin.dat"] == "binary"
+            assert reasons["packages/openai/node_modules"] == "ignored_dir"
 
 
 FULL_ENTRIES = NPM_MONO + [
@@ -712,17 +713,17 @@ FULL_ENTRIES = NPM_MONO + [
 ]
 
 
-class FullTests(unittest.TestCase):
+class TestFull:
     def mode(self, did, mode):
         code, res = run_script("set-mode", did, mode)
-        self.assertEqual(code, 0, res)
+        assert code == 0, res
 
     def light(self, srv, entries=FULL_ENTRIES):
         did = mono_setup(srv)
         self.mode(did, "use")
         code, out = fetch(srv, did, ref="v1")
-        self.assertEqual(code, 0, out)
-        self.assertEqual(out["layout"], "monorepo")
+        assert code == 0, out
+        assert out["layout"] == "monorepo"
         return did, out
 
     def test_internals_mode_saves_the_whole_monorepo(self):
@@ -730,99 +731,95 @@ class FullTests(unittest.TestCase):
             did = mono_setup(srv)
             self.mode(did, "overview-internals")
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(code, 0, out)
-            self.assertEqual(out["layout"], "full")
-            self.assertNotIn("package_dir", out)
+            assert code == 0, out
+            assert out["layout"] == "full"
+            assert "package_dir" not in out
             dest = Path(out["path"])
-            self.assertTrue((dest / "packages/openai/src/index.ts").is_file())
-            self.assertTrue((dest / "tools/zzfullonly.ts").is_file())
-            self.assertFalse((dest / "tools/blob.bin").exists())
+            assert (dest / "packages/openai/src/index.ts").is_file()
+            assert (dest / "tools/zzfullonly.ts").is_file()
+            assert not (dest / "tools/blob.bin").exists()
             head = head_of(out)
-            self.assertEqual(head["layout"], "full")
-            self.assertEqual(head["skipped"], [])
-            self.assertEqual(not_saved(dossier.load(did)[0]), [])
-            self.assertIn("binary", out["skipped_by_reason"])
+            assert head["layout"] == "full"
+            assert head["skipped"] == []
+            assert not_saved(dossier.load(did)[0]) == []
+            assert "binary" in out["skipped_by_reason"]
             code, again = fetch(srv, did, ref="v1")
-            self.assertEqual(again["layout"], "full")
-            self.assertEqual(len(srv.requests), 1)
+            assert again["layout"] == "full"
+            assert len(srv.requests) == 1
 
     def test_full_adds_the_rest_without_touching_saved_files(self):
         from teach_me_lib import search
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(FULL_ENTRIES))}) as srv, TempHome():
             did, out = self.light(srv)
             dest = Path(out["path"])
-            self.assertFalse((dest / "tools").exists())
+            assert not (dest / "tools").exists()
             mine = dest / "packages/ai/src/index.ts"
             mine.write_text("// edited on disk\n", encoding="utf-8")
             self.mode(did, "use-internals")
             code, res = run_script("fetch-code", did, "--full", env=srv.env())
-            self.assertEqual(code, 0, res)
-            self.assertEqual(res["layout"], "full")
-            self.assertGreater(res["added"], 0)
-            self.assertEqual(mine.read_text(encoding="utf-8"), "// edited on disk\n")
-            self.assertTrue((dest / "tools/zzfullonly.ts").is_file())
+            assert code == 0, res
+            assert res["layout"] == "full"
+            assert res["added"] > 0
+            assert mine.read_text(encoding="utf-8") == "// edited on disk\n"
+            assert (dest / "tools/zzfullonly.ts").is_file()
             head = head_of(out)
-            self.assertEqual(head["layout"], "full")
-            self.assertEqual(head["skipped"], [])
-            self.assertNotIn("not_saved", head["skipped_by_reason"])
-            self.assertNotIn("package_dir", head)
-            self.assertEqual((head["repo"], head["ref"]), ("acme/lib", "v1"))
-            self.assertEqual(res["files"], len(head["files"]))
-            self.assertEqual(not_saved(dossier.load(did)[0]), [])
+            assert head["layout"] == "full"
+            assert head["skipped"] == []
+            assert "not_saved" not in head["skipped_by_reason"]
+            assert "package_dir" not in head
+            assert (head["repo"], head["ref"]) == ("acme/lib", "v1")
+            assert res["files"] == len(head["files"])
+            assert not_saved(dossier.load(did)[0]) == []
             found = search.query(did, "zzfullonlytoken")
-            self.assertTrue(any(r["citation"].get("path") == "tools/zzfullonly.ts" for r in found["results"]))
+            assert any(r["citation"].get("path") == "tools/zzfullonly.ts" for r in found["results"])
             code, again = run_script("fetch-code", did, "--full", env=srv.env())
-            self.assertEqual(again, {"ok": True, "added": 0, "already": True})
+            assert again == {"ok": True, "added": 0, "already": True}
 
     def test_full_on_single_layout_does_nothing(self):
         with FixtureServer({"/acme/lib/tar.gz/v1": route(tarball(BASIC))}) as srv, TempHome():
             did = setup(srv, {"kind": "package", "value": "1.0.0", "label": "lib_1.0.0"})
             code, out = fetch(srv, did, ref="v1")
-            self.assertEqual(out["layout"], "single")
+            assert out["layout"] == "single"
             code, res = run_script("fetch-code", did, "--full", env=srv.env())
-            self.assertEqual(code, 0, res)
-            self.assertEqual(res, {"ok": True, "added": 0, "already": True})
-            self.assertEqual(len(srv.requests), 1)
+            assert code == 0, res
+            assert res == {"ok": True, "added": 0, "already": True}
+            assert len(srv.requests) == 1
 
     def test_full_without_saved_code_blocks(self):
         with FixtureServer({}) as srv, TempHome():
             did = setup(srv, {"kind": "package", "value": "1.0.0", "label": "lib_1.0.0"})
             code, res = run_script("fetch-code", did, "--full", env=srv.env())
-            self.assertEqual(code, 2)
-            self.assertEqual(res["error"]["code"], "bad_input")
-            self.assertIn("fetch-code", res["error"]["message"])
-            self.assertEqual(len(srv.requests), 0)
+            assert code == 2
+            assert res["error"]["code"] == "bad_input"
+            assert "fetch-code" in res["error"]["message"]
+            assert len(srv.requests) == 0
 
     def test_full_and_path_together_rejected(self):
         with FixtureServer({}) as srv, TempHome():
             did = setup(srv)
             code, res = run_script("fetch-code", did, "--full", "--path", "src", env=srv.env())
-            self.assertEqual(code, 2)
-            self.assertEqual(res["error"]["code"], "bad_input")
+            assert code == 2
+            assert res["error"]["code"] == "bad_input"
 
 
-class DownloadTests(unittest.TestCase):
+class TestDownload:
     def test_download_streams_and_caps(self):
         routes = {"/f": (200, "application/octet-stream", b"x" * 5000)}
         with FixtureServer(routes) as srv, tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "f.bin"
             resp = net.download(srv.url("/f"), dest, 10000)
-            self.assertEqual(resp.status, 200)
-            self.assertEqual(dest.read_bytes(), b"x" * 5000)
+            assert resp.status == 200
+            assert dest.read_bytes() == b"x" * 5000
             dest2 = Path(tmp) / "g.bin"
-            with self.assertRaises(BlockedError) as ctx:
+            with pytest.raises(BlockedError) as ctx:
                 net.download(srv.url("/f"), dest2, 100)
-            self.assertEqual(ctx.exception.code, "too_large")
-            self.assertFalse(dest2.exists())
+            assert ctx.value.code == "too_large"
+            assert not dest2.exists()
             resp = net.download(srv.url("/missing"), dest2, 100)
-            self.assertEqual(resp.status, 404)
-            self.assertFalse(dest2.exists())
+            assert resp.status == 404
+            assert not dest2.exists()
 
     def test_download_rejects_non_http(self):
-        with self.assertRaises(BlockedError) as ctx:
+        with pytest.raises(BlockedError) as ctx:
             net.download("file:///etc/passwd", Path("/nonexistent/x"), 10)
-        self.assertEqual(ctx.exception.code, "bad_input")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert ctx.value.code == "bad_input"
