@@ -29,6 +29,8 @@ jobs:
         run: |
           git config --global user.email "ci@example.com"
           git config --global user.name "CI"
+      - name: Run security guardrails
+        run: python3 -m unittest discover -s tests/security -v
       - name: Run explain-changes tests
         run: python3 -m unittest discover -s tests/explain-changes -v
       - name: Run teach-me tests
