@@ -108,8 +108,16 @@ def _check_import(node, rel, skill, own, violations):
                 )
     if isinstance(node, ast.Import):
         for alias in node.names:
-            if alias.name == "subprocess" and alias.asname:
-                violations.append("%s:%d: subprocess must not be imported with an alias" % (rel, node.lineno))
+            if alias.name in ("subprocess", "os") and alias.asname:
+                violations.append(
+                    "%s:%d: %s must not be imported with an alias" % (rel, node.lineno, alias.name)
+                )
+    elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == "os":
+        for alias in node.names:
+            if alias.name in BANNED_OS_ATTRS or alias.name.startswith(BANNED_OS_PREFIXES):
+                violations.append(
+                    "%s:%d: 'from os import %s' is banned" % (rel, node.lineno, alias.name)
+                )
     elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == "subprocess":
         violations.append("%s:%d: 'from subprocess import' is not allowed" % (rel, node.lineno))
 
@@ -121,6 +129,16 @@ def _check_call(node: ast.Call, rel: str, violations: List[str]) -> None:
             violations.append("%s:%d: 'shell=' keyword is not allowed" % (rel, node.lineno))
     if isinstance(func, ast.Name) and func.id in BANNED_NAME_CALLS:
         violations.append("%s:%d: call to banned '%s'" % (rel, node.lineno, func.id))
+    if (
+        isinstance(func, ast.Name)
+        and func.id == "getattr"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id in ("os", "subprocess", "__builtins__")
+    ):
+        violations.append(
+            "%s:%d: dynamic getattr on '%s' is not allowed" % (rel, node.lineno, node.args[0].id)
+        )
     if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
         if func.value.id == "os" and (
             func.attr in BANNED_OS_ATTRS or func.attr.startswith(BANNED_OS_PREFIXES)

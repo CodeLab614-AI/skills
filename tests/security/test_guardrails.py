@@ -100,6 +100,30 @@ class CodeRuleTests(FakeRepo):
         )
         self.assertEqual(find_code_violations(root), [])
 
+    def test_from_os_banned_function_rejected(self):
+        root = self.make({TEACH_LIB + "/x.py": "from os import system\nfrom os import popen as p\n"})
+        self.assertEqual(len(find_code_violations(root)), 2)
+
+    def test_os_alias_rejected(self):
+        root = self.make({TEACH_LIB + "/x.py": "import os as o\n"})
+        v = find_code_violations(root)
+        self.assertEqual(len(v), 1)
+        self.assertIn("os", v[0])
+
+    def test_getattr_on_os_rejected(self):
+        root = self.make(
+            {TEACH_LIB + "/x.py": 'import os\ngetattr(os, "system")\ngetattr(__builtins__, "eval")\n'}
+        )
+        self.assertEqual(len(find_code_violations(root)), 2)
+
+    def test_getattr_on_other_objects_allowed(self):
+        root = self.make({TEACH_LIB + "/x.py": 'x = object()\ngetattr(x, "a", None)\n'})
+        self.assertEqual(find_code_violations(root), [])
+
+    def test_from_os_path_allowed(self):
+        root = self.make({TEACH_LIB + "/x.py": "from os import path, environ\n"})
+        self.assertEqual(find_code_violations(root), [])
+
     def test_unknown_skill_rejected(self):
         root = self.make({"skills/new-skill/scripts/a.py": "x = 1\n"})
         v = find_code_violations(root)
