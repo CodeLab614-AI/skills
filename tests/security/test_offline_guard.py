@@ -20,6 +20,16 @@ class OfflineGuardTests(unittest.TestCase):
             socket.getaddrinfo("example.com", 443)
         self.assertIn("offline guard", str(ctx.exception))
 
+    def test_gethostbyname_family_blocked(self):
+        for fn, arg in ((socket.gethostbyname, "example.com"),
+                        (socket.gethostbyname_ex, "example.com"),
+                        (socket.gethostbyaddr, "192.0.2.1")):
+            with self.subTest(fn=fn.__name__):
+                with self.assertRaises(OSError) as ctx:
+                    fn(arg)
+                self.assertIn("offline guard", str(ctx.exception))
+        self.assertTrue(socket.gethostbyname("localhost").startswith("127."))
+
     def test_public_connect_blocked(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.addCleanup(s.close)

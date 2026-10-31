@@ -7,6 +7,9 @@ if os.environ.get("SKILLS_OFFLINE") == "1":
     import socket
 
     _getaddrinfo = socket.getaddrinfo
+    _gethostbyname = socket.gethostbyname
+    _gethostbyname_ex = socket.gethostbyname_ex
+    _gethostbyaddr = socket.gethostbyaddr
     _connect = socket.socket.connect
     _connect_ex = socket.socket.connect_ex
     _sendto = socket.socket.sendto
@@ -53,6 +56,14 @@ if os.environ.get("SKILLS_OFFLINE") == "1":
             raise OSError("blocked by offline guard: %s" % (host,))
         return _getaddrinfo(host, *args, **kwargs)
 
+    def _lookup_guard(orig):
+        def guard(host):
+            if not _host_ok(host):
+                _log("dns", host)
+                raise OSError("blocked by offline guard: %s" % (host,))
+            return orig(host)
+        return guard
+
     def _connect_guard(self, address):
         if not _addr_ok(self, address):
             _log("connect", address)
@@ -75,6 +86,9 @@ if os.environ.get("SKILLS_OFFLINE") == "1":
         return _sendto(self, data, *args)
 
     socket.getaddrinfo = _getaddrinfo_guard
+    socket.gethostbyname = _lookup_guard(_gethostbyname)
+    socket.gethostbyname_ex = _lookup_guard(_gethostbyname_ex)
+    socket.gethostbyaddr = _lookup_guard(_gethostbyaddr)
     socket.socket.connect = _connect_guard
     socket.socket.connect_ex = _connect_ex_guard
     socket.socket.sendto = _sendto_guard
