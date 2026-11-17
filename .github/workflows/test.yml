@@ -26,13 +26,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-    env:
-      SKILLS_OFFLINE: "1"
-      PYTHONPATH: ${{ github.workspace }}/tests/offline
     steps:
-      - name: Prepare offline log
-        shell: bash
-        run: echo "SKILLS_OFFLINE_LOG=$RUNNER_TEMP/offline-net.log" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -40,9 +34,16 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install pytest (hash-pinned)
-        env:
-          SKILLS_OFFLINE: "0"
         run: python3 -m pip install --require-hashes --no-deps -r .github/test-requirements.txt
+      # The guard starts only now: setup-python may download Python and upgrade pip.
+      - name: Enable offline guard
+        shell: bash
+        run: |
+          {
+            echo "SKILLS_OFFLINE=1"
+            echo "PYTHONPATH=$GITHUB_WORKSPACE/tests/offline"
+            echo "SKILLS_OFFLINE_LOG=$RUNNER_TEMP/offline-net.log"
+          } >> "$GITHUB_ENV"
       - name: Configure git identity
         run: |
           git config --global user.email "ci@example.com"
