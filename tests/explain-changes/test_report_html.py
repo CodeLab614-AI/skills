@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-import unittest
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import run_script
 from test_report import small
 
 from explain_changes_lib import report
@@ -19,16 +18,16 @@ def render(facts=None, verified=None, labels=LABELS, branch="feat/x"):
     return report.render_html(facts, verified, labels, branch, "es")
 
 
-class SelfContainedTests(unittest.TestCase):
+class TestSelfContained:
     def test_no_external_resources_and_no_scripts(self):
         text = render()
         for needle in ("http://", "https://", "<script", "<link", "src=", "@import", "url(",
                        "<img", "<iframe"):
-            self.assertNotIn(needle, text, needle)
-        self.assertTrue(text.startswith("<!doctype html>"))
-        self.assertIn('<html lang="es">', text)
-        self.assertIn("prefers-color-scheme:dark", text)
-        self.assertIn("color-scheme:light dark", text)
+            assert needle not in text, needle
+        assert text.startswith("<!doctype html>")
+        assert '<html lang="es">' in text
+        assert "prefers-color-scheme:dark" in text
+        assert "color-scheme:light dark" in text
 
     def test_everything_from_the_repo_is_escaped(self):
         facts, verified = small()
@@ -51,63 +50,63 @@ class SelfContainedTests(unittest.TestCase):
         facts["range"]["spec"]["from"] = evil
         facts["excluded"]["authors"] = [evil]
         text = render(facts, verified, branch=evil)
-        self.assertNotIn("<script", text)
-        self.assertIn("&lt;script&gt;", text)
+        assert "<script" not in text
+        assert "&lt;script&gt;" in text
         text = render(facts, verified, dict(LABELS, tag_new=evil, page_title=evil))
-        self.assertNotIn("<script", text)
+        assert "<script" not in text
 
 
-class StructureTests(unittest.TestCase):
+class TestStructure:
     def test_summary_points_and_closed_details(self):
         text = render()
-        self.assertIn('<p class="meta">feat/x · 3 archivos · +8 −6</p>', text)
-        self.assertIn("<h1>3 archivos, pero lo importante es 1 cosa:</h1>", text)
-        self.assertEqual(text.count('<details class="pt">'), 1)
-        self.assertNotRegex(text, r"<details[^>]* open")
-        self.assertIn("<b>Nuevo <code class=\"ic\">helper</code></b>", text)
-        self.assertIn("<p>Más <b>detalle</b>.</p><p>Otro párrafo.</p>", text)
-        self.assertIn('<table class="tb"><thead><tr><th>Parámetro</th><th>Qué es</th>', text)
-        self.assertIn("<td><code class=\"ic\">x</code></td><td>Un valor</td>", text)
+        assert '<p class="meta">feat/x · 3 archivos · +8 −6</p>' in text
+        assert "<h1>3 archivos, pero lo importante es 1 cosa:</h1>" in text
+        assert text.count('<details class="pt">') == 1
+        assert not re.search(r"<details[^>]* open", text)
+        assert "<b>Nuevo <code class=\"ic\">helper</code></b>" in text
+        assert "<p>Más <b>detalle</b>.</p><p>Otro párrafo.</p>" in text
+        assert '<table class="tb"><thead><tr><th>Parámetro</th><th>Qué es</th>' in text
+        assert "<td><code class=\"ic\">x</code></td><td>Un valor</td>" in text
         # the same summary the conversation shows
-        self.assertIn("Lo demás (2 archivos):", text)
-        self.assertIn("Ojo con tus reglas:", text)
-        self.assertIn("Tu regla <b>preserve-comments</b> dice: «no borres comentarios».", text)
-        self.assertIn("Qué se revisó:", text)
+        assert "Lo demás (2 archivos):" in text
+        assert "Ojo con tus reglas:" in text
+        assert "Tu regla <b>preserve-comments</b> dice: «no borres comentarios»." in text
+        assert "Qué se revisó:" in text
 
     def test_file_header_new_files_and_diff_style(self):
         text = render()
-        self.assertIn('<code class="ic"><span class="dir">src/</span><b>a.ts</b></code>', text)
-        self.assertIn('<span class="nums">+2 −1</span>', text)
+        assert '<code class="ic"><span class="dir">src/</span><b>a.ts</b></code>' in text
+        assert '<span class="nums">+2 −1</span>' in text
         modified = text.split('<b>a.ts</b>')[1].split("</details>")[0]
-        self.assertIn('class="ln del"', modified)
-        self.assertIn('class="ln add"', modified)
-        self.assertIn("explicado", modified)
+        assert 'class="ln del"' in modified
+        assert 'class="ln add"' in modified
+        assert "explicado" in modified
         new = text.split('<b>b.test.ts</b>')[1].split("</details>")[0]
-        self.assertIn(">nuevo<", new)
-        self.assertNotIn('class="ln add"', new)
-        self.assertNotIn('class="ln del"', new)
-        self.assertNotIn("explicado", new)
+        assert ">nuevo<" in new
+        assert 'class="ln add"' not in new
+        assert 'class="ln del"' not in new
+        assert "explicado" not in new
 
     def test_explanatory_comments_are_marked_and_unnumbered(self):
         text = render()
         a = text.split('<b>a.ts</b>')[1].split("</details>")[0]
         ex = re.findall(r'<span class="ln ex">(.*?)</i></span>', a)
-        self.assertEqual(len(ex), 4)  # /*  Declara  Segunda  */
-        self.assertTrue(all('<span class="num"></span>' in e for e in ex))
-        self.assertLess(a.index("/*"), a.index("Declara"))
-        self.assertLess(a.index("Declara"), a.index("Segunda"))
-        self.assertIn('<i class="eol">// devuelve y</i>', a)
-        self.assertEqual(a.count(LABELS["comment_note"]), 1)
+        assert len(ex) == 4  # /*  Declara  Segunda  */
+        assert all('<span class="num"></span>' in e for e in ex)
+        assert a.index("/*") < a.index("Declara")
+        assert a.index("Declara") < a.index("Segunda")
+        assert '<i class="eol">// devuelve y</i>' in a
+        assert a.count(LABELS["comment_note"]) == 1
         b = text.split('<b>b.test.ts</b>')[1].split("</details>")[0]
-        self.assertNotIn(LABELS["comment_note"], b)
+        assert LABELS["comment_note"] not in b
 
     def test_single_line_comment_above_uses_double_slash(self):
         facts, verified = small()
         verified["comments"] = [{"file": "src/a.ts", "side": "new", "line": 4, "pos": "before",
                                  "text": "Corto."}]
         text = render(facts, verified)
-        self.assertIn("// Corto.", text)
-        self.assertNotIn("/*", text.split('<b>a.ts</b>')[1].split("</details>")[0])
+        assert "// Corto." in text
+        assert "/*" not in text.split('<b>a.ts</b>')[1].split("</details>")[0]
 
     def test_rest_groups_and_unexplained_tag(self):
         facts, verified = small()
@@ -117,33 +116,33 @@ class StructureTests(unittest.TestCase):
             {"kind": "docs", "files": [{"path": "ghost.md", "verified": False}]})
         text = render(facts, verified)
         rest = text.split('<details class="rest">')[1]
-        self.assertIn("Pruebas", rest)
-        self.assertIn("Cambios mecánicos", rest)
-        self.assertIn("<span>· 1</span>", rest)
-        self.assertIn(">lockfile<", rest)
-        self.assertIn("la IA no lo explicó", rest)
-        self.assertIn("Sin agrupar (1 archivo):", text)
-        self.assertIn("⚠ cita no verificada", rest)
-        self.assertIn("ghost.md", rest)
+        assert "Pruebas" in rest
+        assert "Cambios mecánicos" in rest
+        assert "<span>· 1</span>" in rest
+        assert ">lockfile<" in rest
+        assert "la IA no lo explicó" in rest
+        assert "Sin agrupar (1 archivo):" in text
+        assert "⚠ cita no verificada" in rest
+        assert "ghost.md" in rest
 
     def test_unverified_point_file_has_no_code(self):
         facts, verified = small()
         verified["points"][0]["files"].append({"path": "ghost.ts", "verified": False})
         text = render(facts, verified)
-        self.assertEqual(text.count("ghost.ts"), 1)
-        self.assertIn("⚠ cita no verificada", text)
+        assert text.count("ghost.ts") == 1
+        assert "⚠ cita no verificada" in text
 
     def test_rule_warning_shows_rule_and_highlighted_lines(self):
         text = render()
         block = text.split('<ul class="rules">')[1]
-        self.assertIn("Ver la regla y el código", block)
-        self.assertIn("Texto original: <q>Keep comments.</q>", block)
-        self.assertIn(".agents/rules/preserve-comments/RULE.md:2", block)
-        self.assertIn(":3 (versión anterior)", block)
-        self.assertEqual(block.count(" hl"), 1)
+        assert "Ver la regla y el código" in block
+        assert "Texto original: <q>Keep comments.</q>" in block
+        assert ".agents/rules/preserve-comments/RULE.md:2" in block
+        assert ":3 (versión anterior)" in block
+        assert block.count(" hl") == 1
         marked = re.search(r'<span class="ln del hl">(.*?)</span></span>', block)
-        self.assertIsNotNone(marked)
-        self.assertIn("// old", marked.group(1))
+        assert marked is not None
+        assert "// old" in marked.group(1)
 
     def test_unverified_warning_citations_show_no_code(self):
         facts, verified = small()
@@ -154,43 +153,43 @@ class StructureTests(unittest.TestCase):
         warn["changes"][0]["verified"] = False
         text = render(facts, verified)
         block = text.split('<ul class="rules">')[1]
-        self.assertNotIn('class="hunk"', block)
-        self.assertNotIn("<q>", block)
-        self.assertGreaterEqual(block.count("⚠"), 4)
+        assert 'class="hunk"' not in block
+        assert "<q>" not in block
+        assert block.count("⚠") >= 4
 
     def test_no_legends_cards_bars_or_checkboxes(self):
         text = render()
         for needle in ("<input", "checkbox", "<progress", "legend", "review", "revisar",
                        "típico"):
-            self.assertNotIn(needle, text.replace("Qué se revisó", ""), needle)
+            assert needle not in text.replace("Qué se revisó", ""), needle
 
     def test_only_one_inline_code_color(self):
         css = render().split("<style>")[1].split("</style>")[0]
-        self.assertEqual(len(re.findall(r"code\.ic\{[^}]*color:var\(--ic\)", css)), 1)
-        self.assertEqual(re.findall(r"\.ent|\.kind-|--c-file|--c-fn", css), [])
+        assert len(re.findall(r"code\.ic\{[^}]*color:var\(--ic\)", css)) == 1
+        assert re.findall(r"\.ent|\.kind-|--c-file|--c-fn", css) == []
 
 
-class HighlightTests(unittest.TestCase):
+class TestHighlight:
     def test_tokens(self):
         line = highlight("const n = foo(1, 'a'); // note", "src/a.ts")
         for cls in ("hl-k", "hl-n", "hl-s", "hl-f", "hl-c"):
-            self.assertIn(cls, line)
-        self.assertIn("hl-t", highlight("let x: Foo", "a.ts"))
-        self.assertIn('<span class="hl-c"># hi</span>', highlight("# hi", "a.py"))
-        self.assertIn("hl-k", highlight("def f(): return None", "a.py"))
-        self.assertNotIn("hl-", highlight("plain text 12", "notes.md").replace("hl-n", ""))
+            assert cls in line
+        assert "hl-t" in highlight("let x: Foo", "a.ts")
+        assert '<span class="hl-c"># hi</span>' in highlight("# hi", "a.py")
+        assert "hl-k" in highlight("def f(): return None", "a.py")
+        assert "hl-" not in highlight("plain text 12", "notes.md").replace("hl-n", "")
 
     def test_escapes_and_never_loses_text(self):
         line = '<a href="x">&amp;</a> `t` // <b>'
         out = highlight(line, "a.tsx")
-        self.assertNotIn("<a", out)
+        assert "<a" not in out
         import html
-        self.assertEqual(html.unescape(re.sub(r"</?span[^>]*>", "", out)), line)
+        assert html.unescape(re.sub(r"</?span[^>]*>", "", out)) == line
 
 
-class NoInternalIdsTests(RepoTestCase):
-    def test_target_ids_never_reach_the_reports(self):
-        repo = self.make_repo()
+class TestNoInternalIds:
+    def test_target_ids_never_reach_the_reports(self, make_repo):
+        repo = make_repo()
         repo.write(".agents/rules/preserve-comments/RULE.md", "# preserve\nKeep comments.\n")
         repo.write("src/a.ts", "// keep me\nexport const a = 1;\n")
         repo.commit("base")
@@ -204,38 +203,35 @@ class NoInternalIdsTests(RepoTestCase):
                                          "line": 1}, "paths": ["**/*.ts"], "change_kinds": []}]
         code, data = run_script(repo, "facts", "--from", "main", "--targets-stdin",
                                 stdin=json.dumps(targets))
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
-        self.assertIn("R1", json.dumps(facts))  # the ids do exist internally
+        assert "R1" in json.dumps(facts)  # the ids do exist internally
         interp = {"points": [{"title": "Cambio", "line": "l", "files": ["src/a.ts"]}],
                   "warnings": [{"says": "conserva los comentarios",
                                 "change": "Se borró `// keep me`.",
                                 "rule": {"file": ".agents/rules/preserve-comments/RULE.md",
                                          "line": 2},
                                 "changes": [{"file": "src/a.ts", "line": 1, "side": "old"}]}]}
-        self.assertEqual(run_script(repo, "verify", stdin=json.dumps(interp))[0], 0)
+        assert run_script(repo, "verify", stdin=json.dumps(interp))[0] == 0
         code, data = run_script(repo, "report", "--lang", "es")
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         work = repo.path / ".explain-changes"
         for name in ("report.md", "report.html"):
             text = (work / name).read_text(encoding="utf-8")
-            self.assertNotRegex(text, r"\bR\d+\b", name)
-            self.assertIn("preserve-comments", text, name)
+            assert not re.search(r"\bR\d+\b", text), name
+            assert "preserve-comments" in text, name
         # ...and an interpretation that leaks an id is refused before anything is written
         interp["warnings"][0]["change"] = "Rompe R1"
         code, data = run_script(repo, "verify", stdin=json.dumps(interp))
-        self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
-        self.assertIn("R1", data["error"]["message"])
+        assert (code, data["error"]["code"]) == (2, "bad_input")
+        assert "R1" in data["error"]["message"]
 
     def test_rule_name_comes_from_folder_or_file(self):
         from explain_changes_lib.rules import rule_name
-        self.assertEqual(rule_name(".agents/rules/preserve-comments/RULE.md"), "preserve-comments")
-        self.assertEqual(rule_name(".agents/rules/hooks.md"), "hooks")
-        self.assertEqual(rule_name(".cursor/rules/style.mdc"), "style")
-        self.assertEqual(rule_name("AGENTS.md"), "AGENTS")
-        self.assertEqual(rule_name(".cursorrules"), "cursorrules")
-        self.assertEqual(rule_name("docs/api/README.md"), "api")
+        assert rule_name(".agents/rules/preserve-comments/RULE.md") == "preserve-comments"
+        assert rule_name(".agents/rules/hooks.md") == "hooks"
+        assert rule_name(".cursor/rules/style.mdc") == "style"
+        assert rule_name("AGENTS.md") == "AGENTS"
+        assert rule_name(".cursorrules") == "cursorrules"
+        assert rule_name("docs/api/README.md") == "api"
 
-
-if __name__ == "__main__":
-    unittest.main()

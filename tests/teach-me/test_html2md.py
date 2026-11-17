@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import unittest
 
-import helpers  # noqa: F401
+import teach_helpers  # noqa: F401
 from teach_me_lib import html2md
 
 
-class Html2MdTests(unittest.TestCase):
+class TestHtml2Md:
     def test_headings_code_links_lists(self):
         html = (
             "<h1>Title</h1><p>Use <code>foo()</code> and see "
@@ -16,20 +15,20 @@ class Html2MdTests(unittest.TestCase):
             "<table><tr><th>k</th><th>v</th></tr><tr><td>a</td><td>1</td></tr></table>"
         )
         out = html2md.convert(html)
-        self.assertIn("# Title", out)
-        self.assertIn("## Sub", out)
-        self.assertIn("Use `foo()` and see [the guide](/x).", out)
-        self.assertIn("- one\n- two", out)
-        self.assertIn("```\na = 1\nb = 2\n```", out)
-        self.assertIn("| k | v |", out)
-        self.assertIn("| a | 1 |", out)
+        assert "# Title" in out
+        assert "## Sub" in out
+        assert "Use `foo()` and see [the guide](/x)." in out
+        assert "- one\n- two" in out
+        assert "```\na = 1\nb = 2\n```" in out
+        assert "| k | v |" in out
+        assert "| a | 1 |" in out
 
     def test_blank_line_after_list(self):
         out = html2md.convert("<ul><li>a</li><li>b</li></ul>"
                               "<table><tr><th>k</th></tr><tr><td>1</td></tr></table><p>after</p>")
-        self.assertIn("- b\n\n| k |", out)
+        assert "- b\n\n| k |" in out
         out = html2md.convert("<ul><li>a</li></ul><p>para</p>")
-        self.assertIn("- a\n\npara", out)
+        assert "- a\n\npara" in out
 
     def test_drops_scripts_and_nav(self):
         html = (
@@ -38,14 +37,11 @@ class Html2MdTests(unittest.TestCase):
             "<p>Keep me</p><footer>FOOT</footer>"
         )
         out = html2md.convert(html)
-        self.assertEqual(out.strip(), "Keep me")
+        assert out.strip() == "Keep me"
 
     def test_malformed_html_and_blank_lines(self):
         out = html2md.convert("<p>a<p>b</div></span><h3>c<br><br><br><br><p>d")
-        self.assertIn("a", out)
-        self.assertIn("### c", out)
-        self.assertNotIn("\n\n\n", out)
+        assert "a" in out
+        assert "### c" in out
+        assert "\n\n\n" not in out
 
-
-if __name__ == "__main__":
-    unittest.main()

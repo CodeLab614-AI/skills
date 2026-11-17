@@ -18,7 +18,7 @@ MAX_SAFE = 100  # keeps the file name far below filesystem limits
 def state_key(branch: str) -> str:
     """File-safe, collision-free key: sanitized name plus a short hash of the original."""
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", branch.replace("/", "__"))
-    digest = hashlib.sha1(branch.encode("utf-8")).hexdigest()[:8]
+    digest = hashlib.sha1(branch.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
     return safe[:MAX_SAFE] + "-" + digest
 
 

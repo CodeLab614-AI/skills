@@ -4,11 +4,14 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  unittest:
+  tests:
     strategy:
       fail-fast: false
       matrix:
@@ -20,16 +23,60 @@ jobs:
           - os: macos-latest
             python: "3.13"
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python }}
+      - name: Install pytest (hash-pinned)
+        run: python3 -m pip install --require-hashes --no-deps -r .github/test-requirements.txt
+      # The guard starts only now: setup-python may download Python and upgrade pip.
+      - name: Enable offline guard
+        shell: bash
+        run: |
+          {
+            echo "SKILLS_OFFLINE=1"
+            echo "PYTHONPATH=$GITHUB_WORKSPACE/tests/offline"
+            echo "SKILLS_OFFLINE_LOG=$RUNNER_TEMP/offline-net.log"
+          } >> "$GITHUB_ENV"
       - name: Configure git identity
         run: |
           git config --global user.email "ci@example.com"
           git config --global user.name "CI"
+      - name: Run security guardrails
+        env:
+          SKILLS_OFFLINE_LOG: ""
+        run: python3 -m pytest tests/security -v
       - name: Run explain-changes tests
-        run: python3 -m unittest discover -s tests/explain-changes -v
+        run: python3 -m pytest tests/explain-changes -v
       - name: Run teach-me tests
-        run: python3 -m unittest discover -s tests/teach-me -v
+        run: python3 -m pytest tests/teach-me -v
+      - name: Fail if tests tried to reach the network
+        shell: bash
+        run: test ! -s "$SKILLS_OFFLINE_LOG" || { cat "$SKILLS_OFFLINE_LOG"; exit 1; }
+
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - name: Install scanners (hash-pinned)
+        run: python3 -m pip install --require-hashes --no-deps -r .github/ci-requirements.txt
+      - name: Run Bandit
+        run: bandit -r skills -q
+      - name: Audit GitHub config with zizmor
+        run: zizmor --format=github .github
+        env:
+          GH_TOKEN: ${{ github.token }}

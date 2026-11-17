@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-import unittest
 
-import helpers  # noqa: F401
-from helpers import TempHome, run_script
+import pytest
+
+import teach_helpers  # noqa: F401
+from teach_helpers import run_script
 from teach_me_lib import dossier, frontmatter
 from test_topics import URL, cite, make
 
@@ -44,12 +45,12 @@ def payload(rows=None, **over):
     return data
 
 
-class OverviewBase(unittest.TestCase):
+class OverviewBase:
     lang = "es"
 
-    def setUp(self):
-        self.home = TempHome().__enter__()
-        self.addCleanup(self.home.__exit__, None, None, None)
+    @pytest.fixture(autouse=True)
+    def _overview_setup(self, home):
+        self.home = home
         self.did, self.meta, self.base = make(self.lang)
         self.meta["mode"] = "overview"
         self.meta["competitors"] = {REPO: dict(ENTRY)}
@@ -65,46 +66,46 @@ class OverviewBase(unittest.TestCase):
         return (self.base / self.n["overview"]).read_text(encoding="utf-8")
 
 
-class OverviewTests(OverviewBase):
+class TestOverview(OverviewBase):
     def test_competitor_match_ignores_case_and_keeps_the_row(self):
         code, out = self.save(payload(rows=[row("Acme/Widget")]))
-        self.assertEqual(code, 0, out)
+        assert code == 0, out
         head, _ = frontmatter.parse(self.text())
-        self.assertEqual(head["sections"][4]["rows"][0]["competitor"], "Acme/Widget")
+        assert head["sections"][4]["rows"][0]["competitor"] == "Acme/Widget"
 
     def test_save_overview_writes_six_sections_in_es(self):
         data = payload()
         data["sections"][4]["rows"][0]["one_liner"]["text"] = "Licencia GPL, versión 9.9"
         code, out = self.save(data)
-        self.assertEqual(code, 0, out)
-        self.assertEqual(out["competitors"], 1)
+        assert code == 0, out
+        assert out["competitors"] == 1
         text = self.text()
         heads = [ln for ln in text.split("\n") if ln.startswith("## ")]
-        self.assertEqual(heads, ["## Qué es y qué hace", "## Para qué sirve",
+        assert heads == ["## Qué es y qué hace", "## Para qué sirve",
                                  "## Con qué se usa", "## Cómo se ve usarlo",
-                                 "## Competidores directos", "## Cobertura"])
+                                 "## Competidores directos", "## Cobertura"]
         table = [ln for ln in text.split("\n") if ln.startswith("| [")][0]
-        self.assertIn("[acme/widget](https://github.com/acme/widget)", table)
-        self.assertIn("MIT", table)
-        self.assertIn("2.1.0", table)
-        self.assertIn("2026-01-02", table)
-        self.assertIn("2026-02-03", table)
+        assert "[acme/widget](https://github.com/acme/widget)" in table
+        assert "MIT" in table
+        assert "2.1.0" in table
+        assert "2026-01-02" in table
+        assert "2026-02-03" in table
         cells = [c.strip() for c in table.strip("|").split(" | ")]
-        self.assertEqual(cells[2:6], ["MIT", "2.1.0", "2026-01-02", "2026-02-03"])
-        self.assertIn("> generateText returns a string", text)
-        self.assertIn("const x = 1;", text)
+        assert cells[2:6] == ["MIT", "2.1.0", "2026-01-02", "2026-02-03"]
+        assert "> generateText returns a string" in text
+        assert "const x = 1;" in text
         head, _ = frontmatter.parse(text)
-        self.assertEqual(head["teach_me"], "overview")
+        assert head["teach_me"] == "overview"
 
     def test_coverage_counts_pages(self):
         docs_dir = self.base / self.n["sources_dir"] / self.n["docs_dir"]
         pages = [{"url": URL, "state": "ok"}, {"url": URL + "2", "state": "failed", "reason": "x"}]
         (docs_dir / "_pages.md").write_text(frontmatter.dump({"pages": pages}, ""), encoding="utf-8")
-        self.assertEqual(self.save(payload())[0], 0)
+        assert self.save(payload())[0] == 0
         cov = self.text().split("## Cobertura")[1]
-        self.assertIn("1", cov)
-        self.assertIn("- Leído: 1", cov)
-        self.assertIn("1 sin descargar", cov)
+        assert "1" in cov
+        assert "- Leído: 1" in cov
+        assert "1 sin descargar" in cov
 
     def test_en_labels(self):
         did, m, base = make("en", "https://other.example.com/docs")
@@ -112,84 +113,80 @@ class OverviewTests(OverviewBase):
         m["competitors"] = {REPO: dict(ENTRY)}
         dossier.save(did, m)
         code, out = run_script("save-overview", did, stdin=json.dumps(payload()))
-        self.assertEqual(code, 0, out)
+        assert code == 0, out
         text = (base / m["names"]["overview"]).read_text(encoding="utf-8")
-        self.assertIn("## Direct competitors", text)
-        self.assertIn("## Coverage", text)
+        assert "## Direct competitors" in text
+        assert "## Coverage" in text
 
     def test_save_overview_rejects_unknown_competitor(self):
         code, out = self.save(payload(rows=[row("nobody/none")]))
-        self.assertEqual((code, out["error"]["code"]), (2, "competitor_not_fetched"))
+        assert (code, out["error"]["code"]) == (2, "competitor_not_fetched")
 
     def test_save_overview_rejects_more_than_five_rows(self):
         code, out = self.save(payload(rows=[row() for _ in range(6)]))
-        self.assertEqual((code, out["error"]["code"]), (2, "bad_input"))
+        assert (code, out["error"]["code"]) == (2, "bad_input")
 
     def test_zero_rows_ok(self):
         code, out = self.save(payload(rows=[]))
-        self.assertEqual(code, 0, out)
-        self.assertEqual(out["competitors"], 0)
+        assert code == 0, out
+        assert out["competitors"] == 0
 
     def test_sections_must_be_exact(self):
         data = payload()
         data["sections"].pop(0)
-        self.assertEqual(self.save(data)[1]["error"]["code"], "bad_input")
+        assert self.save(data)[1]["error"]["code"] == "bad_input"
         data = payload()
         data["sections"][0]["claims"] = []
-        self.assertEqual(self.save(data)[1]["error"]["code"], "bad_input")
+        assert self.save(data)[1]["error"]["code"] == "bad_input"
 
     def test_save_overview_needs_support_and_code_support(self):
         data = payload()
         del data["sections"][0]["claims"][0]["support"]
-        self.assertEqual(self.save(data)[1]["error"]["code"], "support_not_checked")
+        assert self.save(data)[1]["error"]["code"] == "support_not_checked"
         data = payload()
         del data["sections"][4]["rows"][0]["difference"]["support"]
-        self.assertEqual(self.save(data)[1]["error"]["code"], "support_not_checked")
+        assert self.save(data)[1]["error"]["code"] == "support_not_checked"
         data = payload()
         del data["sections"][3]["code_support"]
-        self.assertEqual(self.save(data)[1]["error"]["code"], "support_not_checked")
+        assert self.save(data)[1]["error"]["code"] == "support_not_checked"
         data = payload()
         data["sections"][3]["code_support"] = "unsupported"
-        self.assertEqual(self.save(data)[1]["error"]["code"], "unsupported_claims")
+        assert self.save(data)[1]["error"]["code"] == "unsupported_claims"
         data = payload()
         del data["support_checked_in"]
-        self.assertEqual(self.save(data)[1]["error"]["code"], "support_not_checked")
+        assert self.save(data)[1]["error"]["code"] == "support_not_checked"
 
     def test_unverified_citation(self):
         data = payload()
         data["sections"][4]["rows"][0]["one_liner"]["sources"] = [cite("not on the page")]
         code, out = self.save(data)
-        self.assertEqual(out["error"]["code"], "unverified_claims")
-        self.assertIn("competitors[0]", out["error"]["message"])
-        self.assertFalse((self.base / self.n["overview"]).exists())
+        assert out["error"]["code"] == "unverified_claims"
+        assert "competitors[0]" in out["error"]["message"]
+        assert not (self.base / self.n["overview"]).exists()
 
     def test_save_overview_blocks_in_mode_use(self):
         meta, _ = dossier.load(self.did)
         meta["mode"] = "use"
         dossier.save(self.did, meta)
         code, out = self.save(payload())
-        self.assertEqual((code, out["error"]["code"]), (2, "part_not_in_mode"))
+        assert (code, out["error"]["code"]) == (2, "part_not_in_mode")
 
     def test_save_overview_marks_part_done_and_ready(self):
-        self.assertEqual(self.save(payload())[0], 0)
+        assert self.save(payload())[0] == 0
         meta, _ = dossier.load(self.did)
-        self.assertIn("overview", meta["parts_done"])
-        self.assertIn("overview", meta["phases"])
-        self.assertEqual(meta["status"], "ready")
+        assert "overview" in meta["parts_done"]
+        assert "overview" in meta["phases"]
+        assert meta["status"] == "ready"
 
     def test_show_part_overview_and_missing(self):
         code, out = run_script("show-part", self.did, "overview")
-        self.assertEqual((code, out["error"]["code"]), (2, "part_not_saved"))
+        assert (code, out["error"]["code"]) == (2, "part_not_saved")
         self.save(payload())
         code, out = run_script("show-part", self.did, "overview")
-        self.assertEqual(code, 0, out)
-        self.assertEqual(out["teach_me"], "overview")
-        self.assertEqual(len(out["sections"]), 5)
+        assert code == 0, out
+        assert out["teach_me"] == "overview"
+        assert len(out["sections"]) == 5
         code, out = run_script("show-part", self.did, "built")
-        self.assertEqual(out["error"]["code"], "part_not_saved")
+        assert out["error"]["code"] == "part_not_saved"
         code, out = run_script("show-part", self.did, "use")
-        self.assertEqual(out["error"]["code"], "bad_input")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert out["error"]["code"] == "bad_input"

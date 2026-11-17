@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,19 +30,19 @@ def _frontmatter(text: str):
     return meta, "\n".join(lines[end + 1:])
 
 
-class SkillMdTests(unittest.TestCase):
+class TestSkillMd:
     def test_skill_md_contract(self):
         meta, body = _frontmatter(_read())
-        self.assertEqual(meta.get("name"), "explain-changes")
-        self.assertEqual(meta.get("disable-model-invocation"), "true")
-        self.assertIn("explicitly", meta.get("description", ""))
-        self.assertIn("scripts/explain_changes.py", body)
+        assert meta.get("name") == "explain-changes"
+        assert meta.get("disable-model-invocation") == "true"
+        assert "explicitly" in meta.get("description", "")
+        assert "scripts/explain_changes.py" in body
         for sub in SUBCOMMANDS:
-            self.assertRegex(body, r"explain_changes\.py\" %s\b" % sub)
+            assert re.search(r"explain_changes\.py\" %s\b" % sub, body)
         refs = set(re.findall(r"references/[\w.-]+\.md", body))
-        self.assertTrue(refs)
+        assert refs
         for ref in refs:
-            self.assertTrue((SKILL_DIR / ref).is_file(), ref)
+            assert (SKILL_DIR / ref).is_file(), ref
 
     def test_every_flag_exists_in_the_parser(self):
         from explain_changes import build_parser
@@ -57,35 +56,31 @@ class SkillMdTests(unittest.TestCase):
         _, body = _frontmatter(_read())
         body = re.sub(r"`python3? --version`", "", body)  # the interpreter's own flag
         flags = set(re.findall(r"(?<![\w-])--[a-z][a-z-]*", body))
-        self.assertTrue(flags)
-        self.assertEqual(sorted(flags - known), [])
+        assert flags
+        assert sorted(flags - known) == []
 
     def test_report_format_lists_every_english_label_key(self):
         from explain_changes_lib.labels import LABELS
         text = (SKILL_DIR / "references" / "report-format.md").read_text(encoding="utf-8")
         section = text.split("## Label keys", 1)[1]
         keys = re.findall(r"^\| `([a-z_]+)` \|", section, re.M)
-        self.assertEqual(sorted(keys), sorted(LABELS["en"].keys()))
+        assert sorted(keys) == sorted(LABELS["en"].keys())
 
     def test_interpreter_schema_and_english_names(self):
         _, body = _frontmatter(_read())
         for key in ('"points"', '"rest"', '"warnings"', '"comments"', '"pos"', '"says"'):
-            self.assertIn(key, body, key)
+            assert key in body, key
         for name in ("report.md", "report.html", "references/report-format.md",
                      "references/rules.md", "references/mechanical.md"):
-            self.assertIn(name, body, name)
+            assert name in body, name
         files = [p for p in SKILL_DIR.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
         for path in files:
             text = path.read_text(encoding="utf-8", errors="replace") if path.suffix != ".pyc" else ""
             for old in ("reporte.md", "mecanico", "reglas.md", "estado/"):
-                self.assertNotIn(old, path.name + text, "%s in %s" % (old, path.name))
+                assert old not in path.name + text, "%s in %s" % (old, path.name)
 
     def test_summary_instructions(self):
         _, body = _frontmatter(_read())
         for needle in ("Do not add to it", "unverified citation", "anything", "read-only",
                        "never an internal id"):
-            self.assertIn(needle, body, needle)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            assert needle in body, needle

@@ -162,6 +162,7 @@ def convert(html: str) -> str:
     conv = _Converter()
     try:
         conv.feed(html)
-    except Exception:  # malformed input must not abort a whole run
+    except Exception:  # nosec B110
+        # malformed input must not abort a whole run
         pass
     return conv.finish()

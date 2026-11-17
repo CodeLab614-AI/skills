@@ -3,9 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import unittest
 
-from helpers import RepoTestCase, run_script
+from explain_helpers import run_script
 
 
 NOLOCK = {"GIT_OPTIONAL_LOCKS": "0"}  # the test itself must not refresh the index
@@ -32,9 +31,9 @@ def _stat(path):
     return digest, os.stat(path).st_mtime_ns
 
 
-class EndToEndTests(RepoTestCase):
-    def test_full_run_is_read_only(self):
-        repo = self.make_repo()
+class TestEndToEnd:
+    def test_full_run_is_read_only(self, make_repo):
+        repo = make_repo()
         repo.write("AGENTS.md", "# rules\nbe kind\n")
         repo.write("src/a.txt", "".join("l%d\n" % i for i in range(1, 30)))
         repo.write("src/b.txt", "b\n")
@@ -50,22 +49,17 @@ class EndToEndTests(RepoTestCase):
         head = repo.git("rev-parse", "HEAD")
         before = snapshot(repo)
         status = repo.git("status", "--porcelain", env=NOLOCK)
-        self.assertEqual(run_script(repo, "detect")[0], 0)
+        assert run_script(repo, "detect")[0] == 0
         code, data = run_script(repo, "facts", "--from", "main", "--include-uncommitted")
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         interp = {"interpreted_in": "subagent",
                   "points": [{"title": "A", "line": "w", "files": ["src/a.txt"]}]}
         code, data = run_script(repo, "verify", stdin=json.dumps(interp))
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         code, data = run_script(repo, "report", "--lang", "es")
-        self.assertEqual(code, 0, data)
-        self.maxDiff = None
-        self.assertEqual(snapshot(repo), before)
-        self.assertEqual(repo.git("status", "--porcelain", env=NOLOCK), status)
-        self.assertEqual(repo.git("rev-parse", "HEAD"), head)
-        self.assertTrue((repo.path / ".explain-changes" / "report.md").exists())
-        self.assertTrue((repo.path / ".explain-changes" / "report.html").exists())
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert code == 0, data
+        assert snapshot(repo) == before
+        assert repo.git("status", "--porcelain", env=NOLOCK) == status
+        assert repo.git("rev-parse", "HEAD") == head
+        assert (repo.path / ".explain-changes" / "report.md").exists()
+        assert (repo.path / ".explain-changes" / "report.html").exists()

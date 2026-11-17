@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404
 import threading
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
@@ -47,7 +47,8 @@ def run_git(repo: Path, args: List[str], check: bool = True, timeout: int = 60,
             stdin: Optional[bytes] = None) -> GitResult:
     env = _env()
     try:
-        proc = subprocess.run(
+        # argv list starting with literal "git", no shell; enforced by tests/security/guardrails.py
+        proc = subprocess.run(  # nosec B603 B607
             ["git", *SAFE_OPTS, *map(fs_str, args)], cwd=str(repo), env=env, input=stdin,
             stdin=None if stdin is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
@@ -73,7 +74,8 @@ def blob_heads(repo: Path, shas: List[str], limit: int, timeout: int = 120) -> D
     if not shas:
         return heads
     try:
-        proc = subprocess.Popen(
+        # argv list starting with literal "git", no shell; enforced by tests/security/guardrails.py
+        proc = subprocess.Popen(  # nosec B603 B607
             ["git", *SAFE_OPTS, "cat-file", "--batch"], cwd=str(repo), env=_env(),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     except OSError:

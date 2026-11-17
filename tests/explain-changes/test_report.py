@@ -5,10 +5,11 @@ import os
 import re
 import subprocess
 import sys
-import unittest
 
-import helpers
-from helpers import RepoTestCase, run_script
+import pytest
+
+import explain_helpers
+from explain_helpers import run_script
 
 from explain_changes_lib import report
 from explain_changes_lib.state import load_state
@@ -70,11 +71,11 @@ def small():
     return facts, verified
 
 
-class RenderTests(unittest.TestCase):
+class TestRender:
     def test_markdown_is_the_conversation_summary(self):
         facts, verified = small()
         text = report.render(facts, verified, report.LABELS["es"])
-        self.assertEqual(text, "\n".join([
+        assert text == "\n".join([
             "3 archivos, pero lo importante es 1 cosa:",
             "",
             "1. **Nuevo `helper`** en `src/`: hace algo.",
@@ -85,30 +86,30 @@ class RenderTests(unittest.TestCase):
             "",
             "- Se borró un comentario en `src/a.ts`. Tu regla **preserve-comments** dice: "
             "«no borres comentarios».",
-            ""]))
+            ""])
 
     def test_lead_variants(self):
         facts, verified = small()
         labels = report.LABELS["en"]
         verified["points"] = verified["points"] * 2
-        self.assertTrue(report.render(facts, verified, labels).startswith(
-            "3 files, but what matters is 2 things:"))
+        assert report.render(facts, verified, labels).startswith(
+            "3 files, but what matters is 2 things:")
         verified["points"] = []
-        self.assertTrue(report.render(facts, verified, labels).startswith(
-            "3 files, with no logic changes to highlight."))
+        assert report.render(facts, verified, labels).startswith(
+            "3 files, with no logic changes to highlight.")
         facts["totals"]["files"] = 1
-        self.assertTrue(report.render(facts, verified, labels).startswith("1 file, with"))
+        assert report.render(facts, verified, labels).startswith("1 file, with")
         facts["totals"]["files"] = 0
         verified["rest"] = {"line": "", "groups": []}
         verified["warnings"] = []
-        self.assertEqual(report.render(facts, verified, labels),
-                         "There are no changes to explain.\n")
+        assert report.render(facts, verified, labels) == \
+                         "There are no changes to explain.\n"
 
     def test_no_warnings_means_no_warning_section(self):
         facts, verified = small()
         verified["warnings"] = []
         text = report.render(facts, verified, report.LABELS["es"])
-        self.assertNotIn("Ojo con tus reglas", text)
+        assert "Ojo con tus reglas" not in text
 
     def test_unverified_warning_is_marked_and_unexplained_is_listed(self):
         facts, verified = small()
@@ -117,10 +118,10 @@ class RenderTests(unittest.TestCase):
         verified["rest"]["groups"].append(
             {"kind": "unexplained", "files": [{"path": p, "verified": True} for p in files]})
         text = report.render(facts, verified, report.LABELS["es"])
-        self.assertIn("⚠ cita no verificada", text)
-        self.assertIn("**Sin agrupar (7 archivos):** `f0.ts`, `f1.ts`, `f2.ts`, `f3.ts`, "
-                      "`f4.ts`, y 2 más", text)
-        self.assertIn("**Lo demás (2 archivos):**", text)  # unexplained files are not "the rest"
+        assert "⚠ cita no verificada" in text
+        assert "**Sin agrupar (7 archivos):** `f0.ts`, `f1.ts`, `f2.ts`, `f3.ts`, " \
+                      "`f4.ts`, y 2 más" in text
+        assert "**Lo demás (2 archivos):**" in text  # unexplained files are not "the rest"
 
     def test_user_text_cannot_break_structure(self):
         facts, verified = small()
@@ -129,47 +130,51 @@ class RenderTests(unittest.TestCase):
         verified["warnings"][0]["change"] = "x\r\n## Note"
         verified["rest"]["line"] = "a\n# H"
         text = report.render(facts, verified, report.LABELS["en"])
-        self.assertFalse([l for l in text.split("\n") if l.startswith("#")])
-        self.assertIn("1. **# Fake ## Heading x**", text)
-        self.assertEqual(text.count("\n\n"), 4)
+        assert not [l for l in text.split("\n") if l.startswith("#")]
+        assert "1. **# Fake ## Heading x**" in text
+        assert text.count("\n\n") == 4
 
     def test_no_internal_ids_in_markdown(self):
         facts, verified = small()
         text = report.render(facts, verified, report.LABELS["es"])
-        self.assertNotRegex(text, r"\bR\d+\b")
-        self.assertNotIn("h-1", text)
+        assert not re.search(r"\bR\d+\b", text)
+        assert "h-1" not in text
 
     def test_label_keys_match(self):
-        self.assertEqual(set(report.LABELS["en"]), set(report.LABELS["es"]))
+        assert set(report.LABELS["en"]) == set(report.LABELS["es"])
 
     def test_label_keys_are_all_used_and_documented(self):
-        from helpers import ROOT
+        from explain_helpers import ROOT
         base = ROOT / "skills" / "explain-changes"
         lib = base / "scripts" / "explain_changes_lib"
         source = "".join((lib / name).read_text(encoding="utf-8")
                          for name in ("report.py", "report_html.py"))
         used = {k for k in report.LABELS["en"] if '"%s"' % k in source or k.startswith("kind_")}
-        self.assertEqual(set(report.LABELS["en"]), used)
+        assert set(report.LABELS["en"]) == used
         doc = (base / "references" / "report-format.md").read_text(encoding="utf-8")
         documented = set(re.findall(r"^\| `(\w+)` \|", doc, re.M))
-        self.assertEqual(documented, used)
+        assert documented == used
 
     def test_fill_leaves_foreign_braces_alone(self):
         from explain_changes_lib.labels import fill
-        self.assertEqual(fill("{a} {b} {c}", a="{b}", b="x"), "{b} x {c}")
+        assert fill("{a} {b} {c}", a="{b}", b="x") == "{b} x {c}"
 
 
-class WriteReportTests(RepoTestCase):
+class TestWriteReport:
+    @pytest.fixture(autouse=True)
+    def _repo_factory(self, make_repo):
+        self._make_repo = make_repo
+
     def pipeline(self, repo, interp=None):
         code, data = run_script(repo, "facts", "--from", "main")
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         code, data = run_script(repo, "verify",
                                 stdin=json.dumps(interp or {"points": []}))
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         return run_script(repo, "report", "--lang", "es")
 
     def feature(self, text="one\n"):
-        repo = self.make_repo()
+        repo = self._make_repo()
         repo.write("a.txt", "base\n")
         repo.commit("base")
         repo.checkout("feat", create=True)
@@ -181,24 +186,24 @@ class WriteReportTests(RepoTestCase):
         repo = self.feature("first\n")
         interp = {"points": [{"title": "T", "files": ["a.txt"]}]}
         code, data = self.pipeline(repo, interp)
-        self.assertEqual(code, 0, data)
-        self.assertTrue(data["ok"])
+        assert code == 0, data
+        assert data["ok"]
         repo.write("second.txt", "s\n")
         repo.commit("again")
         work = repo.path / ".explain-changes"
-        self.assertNotIn("second.txt", (work / "report.html").read_text(encoding="utf-8"))
+        assert "second.txt" not in (work / "report.html").read_text(encoding="utf-8")
         interp["points"][0]["files"].append("second.txt")
         code, data = self.pipeline(repo, interp)
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         reports = sorted(p.name for p in work.rglob("report*"))
-        self.assertEqual(reports, ["report.html", "report.md"])
-        self.assertIn("second.txt", (work / "report.html").read_text(encoding="utf-8"))
-        self.assertEqual(data["path"], ".explain-changes/report.md")
-        self.assertEqual(data["html_path"], ".explain-changes/report.html")
-        self.assertTrue(data["state_path"].startswith(".explain-changes/state/"))
+        assert reports == ["report.html", "report.md"]
+        assert "second.txt" in (work / "report.html").read_text(encoding="utf-8")
+        assert data["path"] == ".explain-changes/report.md"
+        assert data["html_path"] == ".explain-changes/report.html"
+        assert data["state_path"].startswith(".explain-changes/state/")
 
-    def test_real_pipeline_warnings_and_unverified(self):
-        repo = self.make_repo()
+    def test_real_pipeline_warnings_and_unverified(self, make_repo):
+        repo = make_repo()
         repo.write("AGENTS.md", "# rules\nbe kind\nbe brief\nbe clear\nbe fast\n")
         repo.write("a.txt", "base\n")
         repo.commit("base")
@@ -211,64 +216,64 @@ class WriteReportTests(RepoTestCase):
         interp = {"points": [{"title": "Nuevo", "line": "l", "files": ["a.txt"]}],
                   "warnings": [warn(2), warn(99)]}
         code, data = self.pipeline(repo, interp)
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         text = (repo.path / ".explain-changes" / "report.md").read_text(encoding="utf-8")
-        self.assertIn("1 archivo, pero lo importante es 1 cosa:", text)
-        self.assertEqual(text.count("Tu regla **kindness** dice: «be kind»."), 2)
-        self.assertEqual(text.count("⚠ cita no verificada"), 1)
-        self.assertNotIn("AGENTS.md", text)
+        assert "1 archivo, pero lo importante es 1 cosa:" in text
+        assert text.count("Tu regla **kindness** dice: «be kind».") == 2
+        assert text.count("⚠ cita no verificada") == 1
+        assert "AGENTS.md" not in text
         html = (repo.path / ".explain-changes" / "report.html").read_text(encoding="utf-8")
-        self.assertIn("AGENTS.md:99", html)
+        assert "AGENTS.md:99" in html
 
     def test_stale_state_cleanup(self):
         repo = self.feature()
         repo.checkout("gone", create=True)
         repo.write("g.txt", "g\n")
         repo.commit("g")
-        self.assertEqual(self.pipeline(repo)[0], 0)
+        assert self.pipeline(repo)[0] == 0
         gone = load_state(repo.path, "gone")
-        self.assertIsNotNone(gone)
+        assert gone is not None
         repo.checkout("main")
         repo.git("branch", "-D", "gone")
         repo.checkout("merged", create=True)
         repo.write("m.txt", "m\n")
         repo.commit("m")
-        self.assertEqual(self.pipeline(repo)[0], 0)
+        assert self.pipeline(repo)[0] == 0
         repo.checkout("main")
         repo.git("merge", "-q", "--ff-only", "merged")
         repo.checkout("feat")
         junk = repo.path / ".explain-changes" / "state" / "junk.json"
         junk.write_text("not json")
         code, data = self.pipeline(repo)
-        self.assertEqual(code, 0, data)
-        self.assertIsNone(load_state(repo.path, "gone"))
-        self.assertIsNone(load_state(repo.path, "merged"))
-        self.assertIsNotNone(load_state(repo.path, "feat"))
-        self.assertTrue(junk.exists())
+        assert code == 0, data
+        assert load_state(repo.path, "gone") is None
+        assert load_state(repo.path, "merged") is None
+        assert load_state(repo.path, "feat") is not None
+        assert junk.exists()
         files = sorted(p.name for p in (repo.path / ".explain-changes" / "state").iterdir())
-        self.assertEqual(len(files), 2, files)
+        assert len(files) == 2, files
         manifest = json.loads((repo.path / ".explain-changes" / ".manifest.json").read_text())
-        self.assertEqual(len([f for f in manifest["files"] if f.startswith("state/")]), 1)
+        assert len([f for f in manifest["files"] if f.startswith("state/")]) == 1
 
     def test_only_new_keeps_previous_hunks_in_state(self):
         repo = self.feature("first\n")
-        self.assertEqual(self.pipeline(repo)[0], 0)
+        assert self.pipeline(repo)[0] == 0
         repo.write("b.txt", "b\n")
         repo.commit("more")
         code, data = run_script(repo, "facts", "--from", "main", "--only-new")
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         run_script(repo, "verify", stdin='{"points": []}')
-        self.assertEqual(run_script(repo, "report", "--lang", "en")[0], 0)
+        assert run_script(repo, "report", "--lang", "en")[0] == 0
         state = load_state(repo.path, "feat")
-        self.assertEqual(len(state["hunks"]), 2)
+        assert len(state["hunks"]) == 2
 
     def test_detached_head_has_no_state(self):
         repo = self.feature()
         repo.git("checkout", "-q", "--detach")
         code, data = self.pipeline(repo)
-        self.assertEqual(code, 0, data)
-        self.assertIsNone(data["state_path"])
-        self.assertTrue((repo.path / ".explain-changes" / "report.md").exists())
+        assert code == 0, data
+        assert data["state_path"] is None
+        assert (repo.path / ".explain-changes" / "report.md").exists()
 
     def test_labels_override_and_bad_input(self):
         repo = self.feature()
@@ -276,21 +281,21 @@ class WriteReportTests(RepoTestCase):
         run_script(repo, "verify", stdin='{"points": []}')
         code, data = run_script(repo, "report", "--lang", "fr", "--labels-stdin",
                                 stdin=json.dumps({"lead_none": "{files} : rien de plus"}))
-        self.assertEqual(code, 0, data)
+        assert code == 0, data
         text = (repo.path / ".explain-changes" / "report.md").read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("1 file : rien de plus\n"))
+        assert text.startswith("1 file : rien de plus\n")
         code, data = run_script(repo, "report", "--lang", "es", "--labels-stdin",
                                 stdin="{nope")
-        self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
+        assert (code, data["error"]["code"]) == (2, "bad_input")
         code, data = run_script(repo, "report", "--lang", "es", "--labels-stdin",
                                 stdin="[1]")
-        self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
+        assert (code, data["error"]["code"]) == (2, "bad_input")
 
     def test_report_without_flag_ignores_stdin(self):
         repo = self.feature()
         run_script(repo, "facts", "--from", "main")
         run_script(repo, "verify", stdin='{"points": []}')
-        proc = subprocess.Popen([sys.executable, str(helpers.SCRIPT), "report", "--lang", "es"],
+        proc = subprocess.Popen([sys.executable, str(explain_helpers.SCRIPT), "report", "--lang", "es"],
                                 cwd=repo.path, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
@@ -298,18 +303,18 @@ class WriteReportTests(RepoTestCase):
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
-            self.fail("report blocked on stdin")
+            pytest.fail("report blocked on stdin")
         finally:
             proc.stdin.close()
             out = proc.stdout.read()
             proc.stdout.close()
             proc.stderr.close()
-        self.assertEqual(proc.returncode, 0, out)
+        assert proc.returncode == 0, out
         code, data = run_script(repo, "report", "--lang", "es", "--labels-stdin", stdin="{nope")
-        self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
+        assert (code, data["error"]["code"]) == (2, "bad_input")
 
-    def test_facts_commits(self):
-        repo = self.make_repo()
+    def test_facts_commits(self, make_repo):
+        repo = make_repo()
         repo.write("a.txt", "base\n")
         repo.commit("base")
         repo.checkout("feat", create=True)
@@ -321,19 +326,19 @@ class WriteReportTests(RepoTestCase):
         sha = repo.commit("mine two")
         run_script(repo, "facts", "--from", "main", "--exclude-author", "bot@x.io")
         facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
-        self.assertEqual([c["subject"] for c in facts["commits"]], ["mine one", "mine two"])
-        self.assertEqual(facts["commits"][1]["sha"], sha)
-        self.assertEqual(facts["commits"][0]["email"], "me@x.io")
-        self.assertFalse(facts["commits_truncated"])
+        assert [c["subject"] for c in facts["commits"]] == ["mine one", "mine two"]
+        assert facts["commits"][1]["sha"] == sha
+        assert facts["commits"][0]["email"] == "me@x.io"
+        assert not facts["commits_truncated"]
         run_script(repo, "facts", "--commit", sha)
         facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
-        self.assertEqual([c["subject"] for c in facts["commits"]], ["mine two"])
+        assert [c["subject"] for c in facts["commits"]] == ["mine two"]
         run_script(repo, "facts", "--from", "HEAD", "--include-uncommitted")
         facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
-        self.assertEqual(facts["commits"], [])
+        assert facts["commits"] == []
 
-    def test_facts_commits_capped(self):
-        repo = self.make_repo()
+    def test_facts_commits_capped(self, make_repo):
+        repo = make_repo()
         repo.write("a.txt", "base\n")
         repo.commit("base")
         repo.checkout("feat", create=True)
@@ -341,20 +346,20 @@ class WriteReportTests(RepoTestCase):
             repo.git("commit", "-q", "--allow-empty", "-m", "c%d" % i)
         run_script(repo, "facts", "--from", "main")
         facts = json.loads((repo.path / ".explain-changes/run/facts.json").read_text())
-        self.assertEqual(len(facts["commits"]), 50)
-        self.assertTrue(facts["commits_truncated"])
+        assert len(facts["commits"]) == 50
+        assert facts["commits_truncated"]
 
     def test_missing_inputs_is_bad_input(self):
         repo = self.feature()
         code, data = run_script(repo, "report", "--lang", "es")
-        self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
+        assert (code, data["error"]["code"]) == (2, "bad_input")
         run_script(repo, "facts", "--from", "main")
         code, data = run_script(repo, "report", "--lang", "es")
-        self.assertEqual((code, data["error"]["code"]), (2, "bad_input"))
+        assert (code, data["error"]["code"]) == (2, "bad_input")
 
-    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
-                     "running as root: chmod cannot make info/exclude unwritable")
-    def test_refuses_when_not_excludable(self):
+    @pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0,
+                        reason="running as root: chmod cannot make info/exclude unwritable")
+    def test_refuses_when_not_excludable(self, request):
         repo = self.feature()
         run = repo.path / ".explain-changes" / "run"
         run.mkdir(parents=True)
@@ -366,12 +371,9 @@ class WriteReportTests(RepoTestCase):
         if not exclude.exists():
             exclude.write_text("")
         os.chmod(exclude, 0o444)
-        self.addCleanup(os.chmod, exclude, 0o644)
+        request.addfinalizer(lambda: os.chmod(exclude, 0o644))
         code, data = run_script(repo, "report", "--lang", "es")
-        self.assertEqual((code, data["error"]["code"]), (2, "not_excluded"), data)
-        self.assertFalse((repo.path / ".explain-changes" / "report.md").exists())
-        self.assertFalse((repo.path / ".explain-changes" / "state").exists())
+        assert (code, data["error"]["code"]) == (2, "not_excluded"), data
+        assert not (repo.path / ".explain-changes" / "report.md").exists()
+        assert not (repo.path / ".explain-changes" / "state").exists()
 
-
-if __name__ == "__main__":
-    unittest.main()
